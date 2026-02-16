@@ -1,0 +1,18 @@
+# --- Web Scraping Dependencies ---
+
+requests            # Used to send HTTP requests to manga websites and get their HTML pages
+beautifulsoup4      # Parses and extracts useful data (like chapter links) from HTML pages
+lxml                # Optional: a faster parser backend for BeautifulSoup (better performance)
+
+# --- Dynamic Content Scraping ---
+
+selenium            # Automates web browsers (like Chrome or Firefox) to get JavaScript-rendered pages
+# Note: You'll also need ChromeDriver or GeckoDriver in your system PATH
+
+# --- GUI Development ---
+
+pyqt5               # GUI framework to build the desktop app window, buttons, inputs, etc.
+
+# --- Optional Utilities ---
+
+python-dotenv       # Loads settings or secrets from a .env file (useful if we store site credentials or API keys in future)

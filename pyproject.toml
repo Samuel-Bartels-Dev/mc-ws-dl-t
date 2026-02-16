@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mc-ws-dl-t"
+version = "0.1.0"
+description = "Modular manga/comic web downloader toolkit."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Samuel / EGE IT" }]
+dependencies = [
+  "requests>=2.32.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml>=5.2.0"
+]
+
+[project.optional-dependencies]
+dynamic = [
+  "selenium>=4.26.0"
+]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.8.0",
+  "mypy>=1.14.0",
+  "types-requests>=2.32.0.20241016"
+]
+
+[project.scripts]
+mc-download = "mc_ws_dl_t.cli:main"
+mc-scrape = "mc_ws_dl_t.cli:main"
+mc-ui = "mc_ws_dl_t.ui:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

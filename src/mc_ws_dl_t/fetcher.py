@@ -1,12 +1,68 @@
+import atexit
 import logging
+import threading
 import time
-from typing import Iterable
+from typing import Any, Iterable
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .config import ScraperConfig
+
+
+# Track active Selenium drivers so we can force cleanup on normal app exit.
+_ACTIVE_DYNAMIC_DRIVERS: set[Any] = set()
+_ACTIVE_DYNAMIC_DRIVERS_LOCK = threading.Lock()
+
+
+def _track_dynamic_driver(driver: Any) -> None:
+    with _ACTIVE_DYNAMIC_DRIVERS_LOCK:
+        _ACTIVE_DYNAMIC_DRIVERS.add(driver)
+
+
+def _untrack_dynamic_driver(driver: Any) -> None:
+    with _ACTIVE_DYNAMIC_DRIVERS_LOCK:
+        _ACTIVE_DYNAMIC_DRIVERS.discard(driver)
+
+
+def _kill_driver_service_process(driver: Any, logger: logging.Logger) -> None:
+    # Selenium should stop this process itself, but this catches the rare stuck-service case.
+    try:
+        service = getattr(driver, "service", None)
+        process = getattr(service, "process", None) if service else None
+        if process and process.poll() is None:
+            process.kill()
+            logger.debug("Killed lingering WebDriver service process.")
+    except Exception as exc:
+        logger.debug("WebDriver service process cleanup skipped: %s", exc)
+
+
+def _close_dynamic_driver(driver: Any, logger: logging.Logger) -> None:
+    # Always try to close browser tabs and release the webdriver service process.
+    try:
+        driver.quit()
+    except Exception as exc:
+        logger.debug("WebDriver quit raised during cleanup: %s", exc)
+        try:
+            driver.close()
+        except Exception:
+            pass
+    finally:
+        _kill_driver_service_process(driver, logger)
+
+
+def _cleanup_tracked_dynamic_drivers() -> None:
+    # Final safety net for shutdown paths where worker threads are interrupted.
+    logger = logging.getLogger("mc_ws_dl_t")
+    with _ACTIVE_DYNAMIC_DRIVERS_LOCK:
+        tracked_drivers = list(_ACTIVE_DYNAMIC_DRIVERS)
+        _ACTIVE_DYNAMIC_DRIVERS.clear()
+    for driver in tracked_drivers:
+        _close_dynamic_driver(driver, logger)
+
+
+atexit.register(_cleanup_tracked_dynamic_drivers)
 
 
 class FetchError(RuntimeError):
@@ -89,6 +145,7 @@ def fetch_html_dynamic(
             # Chrome args chosen for stable headless runs in CI and local Windows environments.
             options = ChromeOptions()
             options.add_argument("--headless=new")
+            options.add_argument("--headless")
             options.add_argument("--disable-gpu")
             options.add_argument("--no-sandbox")
             driver = webdriver.Chrome(options=options)
@@ -99,6 +156,7 @@ def fetch_html_dynamic(
             driver = webdriver.Firefox(options=options)
         else:
             raise FetchError(f"Unsupported browser '{browser}'. Use 'chrome' or 'firefox'.")
+        _track_dynamic_driver(driver)
 
         driver.set_page_load_timeout(config.timeout_seconds)
         driver.get(url)
@@ -110,7 +168,10 @@ def fetch_html_dynamic(
     finally:
         # Always release browser process if one was started.
         if driver:
-            driver.quit()
+            try:
+                _close_dynamic_driver(driver, active_logger)
+            finally:
+                _untrack_dynamic_driver(driver)
 
 
 def fetch_page(

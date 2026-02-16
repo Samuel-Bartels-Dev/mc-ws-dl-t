@@ -6,8 +6,6 @@ from typing import Sequence
 DEFAULT_DYNAMIC_DOMAINS: tuple[str, ...] = (
     "mangakakalot.com",
     "manganato.com",
-    "m.mangatown.com",
-    "mangatown.com",
     "webtoons.com",
     "mangadex.org",
 )

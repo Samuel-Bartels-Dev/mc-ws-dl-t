@@ -56,6 +56,28 @@ def test_extract_chapter_page_urls() -> None:
     ]
 
 
+def test_extract_chapter_page_urls_filters_neighboring_chapters() -> None:
+    html = """
+    <html>
+      <body>
+        <div id="pager">
+          <a href="/manga/tower_of_god/c651/1.html">Prev</a>
+          <a href="/manga/tower_of_god/c652/2.html">2</a>
+          <a href="/manga/tower_of_god/c653/1.html">Next</a>
+        </div>
+      </body>
+    </html>
+    """
+    page_urls = mangatown.extract_chapter_page_urls(
+        html,
+        base_url="https://m.mangatown.com/manga/tower_of_god/c652/",
+    )
+    assert page_urls == [
+        "https://m.mangatown.com/manga/tower_of_god/c652/",
+        "https://m.mangatown.com/manga/tower_of_god/c652/2.html",
+    ]
+
+
 def test_extract_page_image_url() -> None:
     html = """
     <html>

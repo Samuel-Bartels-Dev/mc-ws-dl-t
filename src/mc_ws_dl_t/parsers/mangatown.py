@@ -71,6 +71,39 @@ def _extract_chapter_key(chapter_url: str) -> str:
     return match.group(1) if match else ""
 
 
+def _extract_series_slug(url: str) -> str:
+    parsed = urlparse(url)
+    match = re.search(r"^/manga/([^/]+)/", parsed.path, re.IGNORECASE)
+    return match.group(1).lower() if match else ""
+
+
+def _extract_chapter_prefix(url: str) -> str:
+    parsed = urlparse(url)
+    match = re.search(r"^(/manga/[^/]+/c[0-9]+(?:\.[0-9]+)?)", parsed.path, re.IGNORECASE)
+    return match.group(1).lower() if match else ""
+
+
+def _is_same_chapter(candidate_url: str, chapter_url: str | None) -> bool:
+    if not chapter_url:
+        return True
+
+    expected_key = _extract_chapter_key(chapter_url)
+    if expected_key and _extract_chapter_key(candidate_url) != expected_key:
+        return False
+
+    expected_series = _extract_series_slug(chapter_url)
+    if expected_series and _extract_series_slug(candidate_url) != expected_series:
+        return False
+
+    expected_prefix = _extract_chapter_prefix(chapter_url)
+    if expected_prefix:
+        candidate_path = urlparse(candidate_url).path.lower()
+        if not candidate_path.startswith(expected_prefix):
+            return False
+
+    return True
+
+
 def parse_series_chapters(html: str, base_url: str | None = None) -> list[MangatownChapter]:
     # Mobile mangatown uses <ul class="detail-ch-list"> for chapter links.
     soup = BeautifulSoup(html, "lxml")
@@ -116,15 +149,21 @@ def parse_series_chapters(html: str, base_url: str | None = None) -> list[Mangat
 
 def extract_chapter_page_urls(html: str, base_url: str | None = None) -> list[str]:
     soup = BeautifulSoup(html, "lxml")
+    chapter_url = base_url
     page_urls: list[str] = []
+
+    if chapter_url and is_chapter_url(chapter_url):
+        page_urls.append(chapter_url)
 
     # Mangatown provides per-page navigation values in <option>.
     for option in soup.select("option[value]"):
         raw_value = str(option.get("value", "")).strip()
         if not raw_value or "/manga/" not in raw_value or "/c" not in raw_value:
             continue
-        page_url = urljoin(base_url, raw_value) if base_url else raw_value
+        page_url = urljoin(chapter_url, raw_value) if chapter_url else raw_value
         if not is_chapter_url(page_url):
+            continue
+        if not _is_same_chapter(page_url, chapter_url):
             continue
         page_urls.append(page_url)
 
@@ -133,8 +172,10 @@ def extract_chapter_page_urls(html: str, base_url: str | None = None) -> list[st
         raw_href = str(link.get("href", "")).strip()
         if not raw_href or "/manga/" not in raw_href or "/c" not in raw_href:
             continue
-        page_url = urljoin(base_url, raw_href) if base_url else raw_href
+        page_url = urljoin(chapter_url, raw_href) if chapter_url else raw_href
         if not is_chapter_url(page_url):
+            continue
+        if not _is_same_chapter(page_url, chapter_url):
             continue
         page_urls.append(page_url)
 
@@ -179,8 +220,21 @@ def fetch_chapter_image_urls(
             active_logger.warning("Failed to fetch chapter landing page for full image scrape: %s", exc)
             return []
 
+        # New Mangatown layout often includes all chapter pages as <img> tags in the
+        # first chapter HTML response. Use those first when available.
+        first_page_images = extract_image_urls_by_selectors(
+            first_html,
+            selectors=CHAPTER_IMAGE_SELECTORS,
+            base_url=chapter_url,
+            filter_content_only=True,
+        )
+
         page_urls = extract_chapter_page_urls(first_html, base_url=chapter_url)
+        if first_page_images and len(page_urls) <= 1:
+            return unique_preserve_order(first_page_images)
+
         if not page_urls:
+            # Keep a fallback to the requested chapter URL when no per-page links are exposed.
             page_urls = [chapter_url]
 
         image_urls: list[str] = []
@@ -192,12 +246,24 @@ def fetch_chapter_image_urls(
                 active_logger.warning("Failed chapter page fetch: %s | %s", page_url, exc)
                 continue
 
-            image_url = extract_page_image_url(page_response.text, base_url=page_url)
-            if not image_url:
+            # Some pages have a single viewer image, others return a full image list.
+            page_image_urls = extract_image_urls_by_selectors(
+                page_response.text,
+                selectors=CHAPTER_IMAGE_SELECTORS,
+                base_url=page_url,
+                filter_content_only=True,
+            )
+            if page_image_urls:
+                image_urls.extend(page_image_urls)
                 continue
-            image_urls.append(image_url)
 
-        return unique_preserve_order(image_urls)
+            image_url = extract_page_image_url(page_response.text, base_url=page_url)
+            if image_url:
+                image_urls.append(image_url)
+
+        if image_urls:
+            return unique_preserve_order(image_urls)
+        return unique_preserve_order(first_page_images)
     finally:
         session.close()
 

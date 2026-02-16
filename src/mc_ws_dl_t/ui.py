@@ -58,6 +58,7 @@ class DownloaderUI:
         self._popup_log_text: tk.Text | None = None
         self._menus: list[tk.Menu] = []
         self._current_palette: dict[str, str] = {}
+        self.library_locations: list[str] = []
 
         # Queue state for large chapter batches.
         self.queue_active = False
@@ -90,6 +91,8 @@ class DownloaderUI:
         self._url_tab_visible = True
 
         self.log_file_var.set(str(self._build_default_log_file_path()))
+        self._load_library_settings()
+        self._ensure_default_library()
 
         self._configure_style()
         self._build_layout()
@@ -106,11 +109,131 @@ class DownloaderUI:
         stamp = time.strftime("%Y%m%d_%H%M%S")
         return logs_dir / f"mc_ws_dl_t_{stamp}.log"
 
+    def _default_library_path(self) -> Path:
+        # Keep the default library anchored in the Pictures folder.
+        return Path.home() / "Pictures" / "MC-WS-DL-Library"
+
+    def _legacy_default_library_path(self) -> Path:
+        # Previous builds used the home root; keep this so we can migrate cleanly.
+        return Path.home() / "MC-WS-DL-Library"
+
+    def _settings_path(self) -> Path:
+        return Path.home() / ".mc_ws_dl_t" / "ui_settings.json"
+
+    def _normalize_library_path(self, raw_path: str) -> str:
+        return str(Path(raw_path).expanduser())
+
+    def _load_library_settings(self) -> None:
+        settings_path = self._settings_path()
+        loaded_locations: list[str] = []
+        default_library = ""
+        try:
+            if settings_path.exists():
+                loaded = json.loads(settings_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    raw_locations = loaded.get("library_locations")
+                    if isinstance(raw_locations, list):
+                        loaded_locations = [
+                            self._normalize_library_path(str(item))
+                            for item in raw_locations
+                            if str(item).strip()
+                        ]
+                    raw_default = loaded.get("default_library", "")
+                    if isinstance(raw_default, str) and raw_default.strip():
+                        default_library = self._normalize_library_path(raw_default)
+        except Exception:
+            loaded_locations = []
+            default_library = ""
+
+        deduped_locations: list[str] = []
+        seen: set[str] = set()
+        for location in loaded_locations:
+            if location in seen:
+                continue
+            seen.add(location)
+            deduped_locations.append(location)
+
+        if default_library and default_library not in seen:
+            deduped_locations.insert(0, default_library)
+        self.library_locations = deduped_locations
+        self.image_dir_var.set(default_library)
+
+    def _save_library_settings(self) -> None:
+        settings_path = self._settings_path()
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+        deduped_locations: list[str] = []
+        seen: set[str] = set()
+        for location in self.library_locations:
+            normalized = self._normalize_library_path(location)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped_locations.append(normalized)
+
+        current_library = self.image_dir_var.get().strip()
+        default_library = ""
+        if current_library:
+            default_library = self._normalize_library_path(current_library)
+            self.image_dir_var.set(default_library)
+            if default_library not in seen:
+                deduped_locations.insert(0, default_library)
+                seen.add(default_library)
+
+        self.library_locations = deduped_locations
+
+        payload = {
+            "library_locations": self.library_locations,
+            "default_library": default_library,
+        }
+        settings_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _ensure_default_library(self) -> None:
+        # First run gets a practical default library path with no manual setup.
+        preferred_default = self._normalize_library_path(str(self._default_library_path()))
+        legacy_default = self._normalize_library_path(str(self._legacy_default_library_path()))
+
+        default_library = self.image_dir_var.get().strip()
+        normalized_default = self._normalize_library_path(default_library) if default_library else ""
+
+        # Migrate old home-root default to Pictures and keep empty state deterministic.
+        if not normalized_default or normalized_default == legacy_default:
+            normalized_default = preferred_default
+            self.image_dir_var.set(normalized_default)
+
+        if normalized_default in self.library_locations:
+            self.library_locations.remove(normalized_default)
+        self.library_locations.insert(0, normalized_default)
+
+        Path(normalized_default).mkdir(parents=True, exist_ok=True)
+        self._save_library_settings()
+
+    def _refresh_library_combo(self) -> None:
+        if hasattr(self, "image_dir_combo"):
+            self.image_dir_combo.configure(values=self.library_locations)
+
+    def _persist_current_library(self) -> None:
+        current_library = self.image_dir_var.get().strip()
+        if not current_library:
+            return
+
+        normalized = self._normalize_library_path(current_library)
+        self.image_dir_var.set(normalized)
+        if normalized in self.library_locations:
+            self.library_locations.remove(normalized)
+        self.library_locations.insert(0, normalized)
+        Path(normalized).mkdir(parents=True, exist_ok=True)
+        self._refresh_library_combo()
+        self._save_library_settings()
+
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root, tearoff=False)
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
         file_menu.add_command(label="Load Series Chapters", command=self._start_series_discovery)
+        file_menu.add_separator()
+        file_menu.add_command(label="Set Library Folder...", command=self._choose_library_folder)
+        file_menu.add_command(label="Open Library Folder", command=self._open_current_library_folder)
         file_menu.add_separator()
         file_menu.add_command(label="Open Log Folder", command=self._open_log_folder)
         file_menu.add_command(label="Pop Out Logs", command=self._open_log_popup)
@@ -476,7 +599,16 @@ class DownloaderUI:
         self.output_browse_button.grid(row=4, column=2, sticky="w", padx=(8, 0), pady=2)
 
         ttk.Label(control_box, text="Image folder").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=2)
-        ttk.Entry(control_box, textvariable=self.image_dir_var).grid(row=1, column=1, sticky="ew", pady=2)
+        self.image_dir_combo = ttk.Combobox(
+            control_box,
+            textvariable=self.image_dir_var,
+            values=self.library_locations,
+            state="normal",
+        )
+        self.image_dir_combo.grid(row=1, column=1, sticky="ew", pady=2)
+        self.image_dir_combo.bind("<<ComboboxSelected>>", lambda _event: self._persist_current_library())
+        self.image_dir_combo.bind("<FocusOut>", lambda _event: self._persist_current_library())
+        self.image_dir_combo.bind("<Return>", lambda _event: self._persist_current_library())
         ttk.Button(control_box, text="Browse", command=self._browse_image_dir, style="Slim.TButton", width=9).grid(
             row=1, column=2, sticky="w", padx=(8, 0), pady=2
         )
@@ -784,6 +916,7 @@ class DownloaderUI:
 
         main.columnconfigure(0, weight=1)
         main.rowconfigure(1, weight=1)
+        self._refresh_library_combo()
         self._toggle_debug_tools()
 
     def _toggle_debug_tools(self) -> None:
@@ -821,6 +954,25 @@ class DownloaderUI:
             os.startfile(str(log_dir))  # type: ignore[attr-defined]
         except Exception as exc:
             messagebox.showerror("Open log folder failed", str(exc))
+
+    def _choose_library_folder(self) -> None:
+        chosen = filedialog.askdirectory(title="Choose library folder")
+        if not chosen:
+            return
+        self.image_dir_var.set(chosen)
+        self._persist_current_library()
+
+    def _open_current_library_folder(self) -> None:
+        current_library = self.image_dir_var.get().strip()
+        if not current_library:
+            messagebox.showinfo("Library folder", "No library folder is set yet.")
+            return
+        library_path = Path(current_library).expanduser()
+        library_path.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(str(library_path))  # type: ignore[attr-defined]
+        except Exception as exc:
+            messagebox.showerror("Open library folder failed", str(exc))
 
     def _open_log_popup(self) -> None:
         if self._log_popup and self._log_popup.winfo_exists():
@@ -935,6 +1087,7 @@ class DownloaderUI:
         chosen = filedialog.askdirectory(title="Choose image download folder")
         if chosen:
             self.image_dir_var.set(chosen)
+            self._persist_current_library()
 
     def _browse_log_file(self) -> None:
         chosen = filedialog.asksaveasfilename(

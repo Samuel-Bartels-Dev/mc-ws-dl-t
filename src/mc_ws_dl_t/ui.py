@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from tkinter.scrolledtext import ScrolledText
+from typing import Any, cast
 
 from .config import ScraperConfig
 from .core import (
@@ -55,7 +55,7 @@ class DownloaderUI:
         self.current_series_history: dict[str, object] = {}
         self.current_failed_chapter_urls: list[str] = []
         self._log_popup: tk.Toplevel | None = None
-        self._popup_log_text: ScrolledText | None = None
+        self._popup_log_text: tk.Text | None = None
         self._menus: list[tk.Menu] = []
         self._current_palette: dict[str, str] = {}
 
@@ -219,17 +219,41 @@ class DownloaderUI:
         }
         palette = palettes["dark" if mode == "dark" else "light"]
         self._current_palette = palette
+        flat_bg = palette["bg"]
 
         # Base widgets.
-        self.root.configure(bg=palette["bg"])
-        self.style.configure("Card.TFrame", background=palette["bg"])
-        self.style.configure("TFrame", background=palette["panel"])
-        self.style.configure("TLabel", background=palette["panel"], foreground=palette["fg"])
-        self.style.configure("Hint.TLabel", background=palette["panel"], foreground=palette["muted"])
-        self.style.configure("Panel.TLabelframe", background=palette["panel"], bordercolor=palette["border"])
+        self.root.configure(bg=flat_bg)
+        self.style.configure("Card.TFrame", background=flat_bg)
+        self.style.configure("TFrame", background=flat_bg)
+        self.style.configure("TLabel", background=flat_bg, foreground=palette["fg"])
+        self.style.configure("Hint.TLabel", background=flat_bg, foreground=palette["muted"])
+        self.style.configure(
+            "Panel.TLabelframe",
+            background=flat_bg,
+            bordercolor=flat_bg,
+            borderwidth=0,
+            relief="flat",
+            lightcolor=flat_bg,
+            darkcolor=flat_bg,
+        )
+        self.style.configure(
+            "TLabelframe",
+            background=flat_bg,
+            bordercolor=flat_bg,
+            borderwidth=0,
+            relief="flat",
+            lightcolor=flat_bg,
+            darkcolor=flat_bg,
+        )
         self.style.configure(
             "Panel.TLabelframe.Label",
-            background=palette["panel"],
+            background=flat_bg,
+            foreground=palette["fg"],
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.style.configure(
+            "TLabelframe.Label",
+            background=flat_bg,
             foreground=palette["fg"],
             font=("Segoe UI", 10, "bold"),
         )
@@ -237,42 +261,42 @@ class DownloaderUI:
         # Inputs and buttons.
         self.style.configure(
             "TEntry",
-            fieldbackground=palette["surface"],
+            fieldbackground=flat_bg,
             foreground=palette["text_fg"],
-            bordercolor=palette["border"],
+            bordercolor=flat_bg,
         )
         self.style.configure(
             "TCombobox",
-            fieldbackground=palette["surface"],
+            fieldbackground=flat_bg,
             foreground=palette["text_fg"],
-            background=palette["surface"],
-            bordercolor=palette["border"],
+            background=flat_bg,
+            bordercolor=flat_bg,
             arrowcolor=palette["fg"],
         )
         self.style.map(
             "TCombobox",
-            fieldbackground=[("readonly", palette["surface"])],
+            fieldbackground=[("readonly", flat_bg)],
             foreground=[("readonly", palette["text_fg"])],
         )
         self.style.configure(
             "TSpinbox",
-            fieldbackground=palette["surface"],
+            fieldbackground=flat_bg,
             foreground=palette["text_fg"],
-            background=palette["surface"],
-            bordercolor=palette["border"],
+            background=flat_bg,
+            bordercolor=flat_bg,
             arrowcolor=palette["fg"],
         )
         self.style.configure(
             "TButton",
-            background=palette["surface"],
+            background=flat_bg,
             foreground=palette["fg"],
-            bordercolor=palette["border"],
+            bordercolor=flat_bg,
             focusthickness=1,
             focuscolor=palette["accent"],
         )
         self.style.map(
             "TButton",
-            background=[("active", palette["panel"])],
+            background=[("active", flat_bg)],
             foreground=[("disabled", palette["muted"])],
         )
         self.style.configure(
@@ -288,28 +312,30 @@ class DownloaderUI:
             foreground=[("disabled", palette["muted"])],
         )
         self.style.configure("Slim.TButton", padding=(6, 2))
-        self.style.configure("TCheckbutton", background=palette["panel"], foreground=palette["fg"])
+        self.style.configure("TCheckbutton", background=flat_bg, foreground=palette["fg"])
 
         # Notebook and tables.
-        self.style.configure("TNotebook", background=palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
+        self.style.configure("TNotebook", background=flat_bg, borderwidth=0, tabmargins=(0, 0, 0, 0))
         self.style.configure(
             "TNotebook.Tab",
-            background=palette["panel"],
+            background=flat_bg,
             foreground=palette["fg"],
-            bordercolor=palette["border"],
+            bordercolor=flat_bg,
             padding=(10, 5),
         )
         self.style.map(
             "TNotebook.Tab",
-            background=[("selected", palette["accent"]), ("active", palette["surface"])],
+            background=[("selected", palette["accent"]), ("active", flat_bg)],
             foreground=[("selected", palette["accent_fg"])],
         )
         self.style.configure(
             "Treeview",
-            background=palette["tree_bg"],
+            background=flat_bg,
             foreground=palette["tree_fg"],
-            fieldbackground=palette["tree_bg"],
-            bordercolor=palette["border"],
+            fieldbackground=flat_bg,
+            bordercolor=flat_bg,
+            borderwidth=0,
+            relief="flat",
             rowheight=22,
         )
         self.style.map(
@@ -319,34 +345,90 @@ class DownloaderUI:
         )
         self.style.configure(
             "Treeview.Heading",
-            background=palette["tree_heading_bg"],
+            background=flat_bg,
             foreground=palette["tree_heading_fg"],
-            bordercolor=palette["border"],
+            bordercolor=flat_bg,
             relief="flat",
             font=("Segoe UI Semibold", 9),
         )
-        self.style.map("Treeview.Heading", background=[("active", palette["panel"])])
+        self.style.map("Treeview.Heading", background=[("active", flat_bg)])
+
+        # Modern slim scrollbars (no arrows), closer to web app visuals.
+        vertical_scroll_layout: list[tuple[str, Any]] = [
+            (
+                "Vertical.Scrollbar.trough",
+                {
+                    "sticky": "ns",
+                    "children": [("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})],
+                },
+            )
+        ]
+        horizontal_scroll_layout: list[tuple[str, Any]] = [
+            (
+                "Horizontal.Scrollbar.trough",
+                {
+                    "sticky": "we",
+                    "children": [("Horizontal.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})],
+                },
+            )
+        ]
+        self.style.layout("Modern.Vertical.TScrollbar", cast(Any, vertical_scroll_layout))
+        self.style.layout("Modern.Horizontal.TScrollbar", cast(Any, horizontal_scroll_layout))
+        self.style.configure(
+            "Modern.Vertical.TScrollbar",
+            background=palette["border"],
+            troughcolor=flat_bg,
+            bordercolor=flat_bg,
+            darkcolor=flat_bg,
+            lightcolor=flat_bg,
+            arrowcolor=flat_bg,
+            arrowsize=0,
+            gripcount=0,
+            relief="flat",
+            width=8,
+        )
+        self.style.configure(
+            "Modern.Horizontal.TScrollbar",
+            background=palette["border"],
+            troughcolor=flat_bg,
+            bordercolor=flat_bg,
+            darkcolor=flat_bg,
+            lightcolor=flat_bg,
+            arrowcolor=flat_bg,
+            arrowsize=0,
+            gripcount=0,
+            relief="flat",
+            width=8,
+        )
+        self.style.map(
+            "Modern.Vertical.TScrollbar",
+            background=[("active", palette["accent"]), ("pressed", palette["accent"])],
+        )
+        self.style.map(
+            "Modern.Horizontal.TScrollbar",
+            background=[("active", palette["accent"]), ("pressed", palette["accent"])],
+        )
 
         # Text widgets (tk.Text via ScrolledText).
-        for text_widget, bg_key, fg_key in (
-            (getattr(self, "log_text", None), "log_bg", "log_fg"),
-            (getattr(self, "json_text", None), "text_bg", "text_fg"),
-            (self._popup_log_text, "log_bg", "log_fg"),
+        for text_widget in (
+            getattr(self, "log_text", None),
+            getattr(self, "json_text", None),
+            self._popup_log_text,
         ):
             if text_widget is not None and text_widget.winfo_exists():
                 text_widget.configure(
-                    background=palette[bg_key],
-                    foreground=palette[fg_key],
-                    insertbackground=palette[fg_key],
+                    background=flat_bg,
+                    foreground=palette["text_fg"],
+                    insertbackground=palette["text_fg"],
                     selectbackground=palette["accent"],
                     selectforeground=palette["accent_fg"],
                     borderwidth=0,
-                    highlightthickness=1,
-                    highlightbackground=palette["border"],
+                    highlightthickness=0,
+                    highlightbackground=flat_bg,
                 )
 
         # Combobox dropdown list colors.
-        self.root.option_add("*TCombobox*Listbox.background", palette["surface"])
+        self.root.option_add("*TCombobox*Listbox.background", flat_bg)
         self.root.option_add("*TCombobox*Listbox.foreground", palette["text_fg"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", palette["accent"])
         self.root.option_add("*TCombobox*Listbox.selectForeground", palette["accent_fg"])
@@ -355,7 +437,7 @@ class DownloaderUI:
         if hasattr(self, "_menus"):
             for menu in self._menus:
                 menu.configure(
-                    background=palette["panel"],
+                    background=flat_bg,
                     foreground=palette["fg"],
                     activebackground=palette["accent"],
                     activeforeground=palette["accent_fg"],
@@ -369,7 +451,7 @@ class DownloaderUI:
         main = ttk.Frame(self.root, style="Card.TFrame", padding=8)
         main.pack(fill=tk.BOTH, expand=True)
 
-        control_box = ttk.LabelFrame(main, text="Download Setup", style="Panel.TLabelframe", padding=8)
+        control_box = ttk.Frame(main, style="Card.TFrame", padding=8)
         control_box.grid(row=0, column=0, sticky="ew")
         control_box.columnconfigure(1, weight=1)
         control_box.columnconfigure(2, weight=0)
@@ -439,19 +521,17 @@ class DownloaderUI:
             variable=self.auto_download_var,
         ).pack(side=tk.LEFT, padx=(0, 2))
 
-        ttk.Label(control_box, text="Logs").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=2)
+        ttk.Label(settings_row, text="Logs").pack(side=tk.LEFT, padx=(10, 4))
         self.logs_path_hint = ttk.Label(
-            control_box,
+            settings_row,
             text="Auto-saved in ./logs (session file).",
             style="Hint.TLabel",
         )
-        self.logs_path_hint.grid(row=3, column=1, sticky="w", pady=2)
+        self.logs_path_hint.pack(side=tk.LEFT, padx=(0, 10))
 
-        log_level_frame = ttk.Frame(control_box)
-        log_level_frame.grid(row=3, column=2, sticky="e", pady=2)
-        ttk.Label(log_level_frame, text="Log level").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(settings_row, text="Log level").pack(side=tk.LEFT, padx=(0, 4))
         self.level_combo = ttk.Combobox(
-            log_level_frame,
+            settings_row,
             textvariable=self.log_level_var,
             values=("DEBUG", "INFO", "WARNING", "ERROR"),
             state="readonly",
@@ -469,17 +549,46 @@ class DownloaderUI:
         content_pane = ttk.Panedwindow(main, orient=tk.VERTICAL)
         content_pane.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
 
-        result_frame = ttk.LabelFrame(content_pane, text="Results", style="Panel.TLabelframe", padding=8)
-        logs_frame = ttk.LabelFrame(content_pane, text="Logs", style="Panel.TLabelframe", padding=8)
+        result_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
+        logs_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
         content_pane.add(result_frame, weight=3)
         content_pane.add(logs_frame, weight=2)
 
         self.result_tabs = ttk.Notebook(result_frame)
         self.result_tabs.pack(fill=tk.BOTH, expand=True)
 
-        self.json_text = ScrolledText(self.result_tabs, wrap=tk.NONE, font=("Consolas", 10))
-        self.json_text.configure(state=tk.DISABLED)
-        self.result_tabs.add(self.json_text, text="Debug JSON")
+        self.json_tab = ttk.Frame(self.result_tabs)
+        self.json_tab.columnconfigure(0, weight=1)
+        self.json_tab.rowconfigure(0, weight=1)
+        self.json_text = tk.Text(
+            self.json_tab,
+            wrap=tk.NONE,
+            font=("Consolas", 10),
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self.json_scroll_y = ttk.Scrollbar(
+            self.json_tab,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.json_text.yview,
+        )
+        self.json_scroll_x = ttk.Scrollbar(
+            self.json_tab,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.json_text.xview,
+        )
+        self.json_text.configure(
+            yscrollcommand=self.json_scroll_y.set,
+            xscrollcommand=self.json_scroll_x.set,
+            state=tk.DISABLED,
+        )
+        self.json_text.grid(row=0, column=0, sticky="nsew")
+        self.json_scroll_y.grid(row=0, column=1, sticky="ns")
+        self.json_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.result_tabs.add(self.json_tab, text="Debug JSON")
 
         self.url_tab = ttk.Frame(self.result_tabs)
         self.url_tab.columnconfigure(0, weight=1)
@@ -491,8 +600,18 @@ class DownloaderUI:
         self.url_table.column("index", width=50, anchor=tk.E, stretch=False)
         self.url_table.column("url", width=900, anchor=tk.W, stretch=True)
 
-        url_scroll_y = ttk.Scrollbar(self.url_tab, orient=tk.VERTICAL, command=self.url_table.yview)
-        url_scroll_x = ttk.Scrollbar(self.url_tab, orient=tk.HORIZONTAL, command=self.url_table.xview)
+        url_scroll_y = ttk.Scrollbar(
+            self.url_tab,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.url_table.yview,
+        )
+        url_scroll_x = ttk.Scrollbar(
+            self.url_tab,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.url_table.xview,
+        )
         self.url_table.configure(yscrollcommand=url_scroll_y.set, xscrollcommand=url_scroll_x.set)
 
         self.url_table.grid(row=0, column=0, sticky="nsew")
@@ -608,31 +727,54 @@ class DownloaderUI:
         self.chapter_table.column("release", width=150, stretch=False, anchor=tk.W)
         self.chapter_table.column("url", width=600, stretch=True, anchor=tk.W)
 
-        chapter_scroll_y = ttk.Scrollbar(chapter_list_frame, orient=tk.VERTICAL, command=self.chapter_table.yview)
-        chapter_scroll_x = ttk.Scrollbar(chapter_list_frame, orient=tk.HORIZONTAL, command=self.chapter_table.xview)
+        # Keep chapter scrollbars slim and subtle.
+        self.chapter_scroll_y = ttk.Scrollbar(
+            chapter_list_frame,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.chapter_table.yview,
+        )
+        self.chapter_scroll_x = ttk.Scrollbar(
+            chapter_list_frame,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.chapter_table.xview,
+        )
         self.chapter_table.configure(
-            yscrollcommand=chapter_scroll_y.set,
-            xscrollcommand=chapter_scroll_x.set,
+            yscrollcommand=self.chapter_scroll_y.set,
+            xscrollcommand=self.chapter_scroll_x.set,
         )
         self.chapter_table.grid(row=0, column=0, sticky="nsew")
-        chapter_scroll_y.grid(row=0, column=1, sticky="ns")
-        chapter_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.chapter_scroll_y.grid(row=0, column=1, sticky="ns")
+        self.chapter_scroll_x.grid(row=1, column=0, sticky="ew")
 
         self.result_tabs.add(chapter_tab, text="Series Chapters")
 
         logs_toolbar = ttk.Frame(logs_frame)
         logs_toolbar.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(logs_toolbar, text="Session logs are auto-saved.", style="Hint.TLabel").pack(side=tk.LEFT)
-        ttk.Button(logs_toolbar, text="Pop Out Logs", command=self._open_log_popup, style="Slim.TButton").pack(
-            side=tk.RIGHT, padx=(6, 0)
-        )
-        ttk.Button(logs_toolbar, text="Open Log Folder", command=self._open_log_folder, style="Slim.TButton").pack(
-            side=tk.RIGHT
-        )
 
-        self.log_text = ScrolledText(logs_frame, wrap=tk.WORD, font=("Consolas", 10), height=9)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        self.log_text.configure(state=tk.DISABLED)
+        logs_body = ttk.Frame(logs_frame)
+        logs_body.pack(fill=tk.BOTH, expand=True)
+        logs_body.columnconfigure(0, weight=1)
+        logs_body.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(
+            logs_body,
+            wrap=tk.WORD,
+            font=("Consolas", 10),
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self.log_scroll_y = ttk.Scrollbar(
+            logs_body,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.log_text.yview,
+        )
+        self.log_text.configure(yscrollcommand=self.log_scroll_y.set, state=tk.DISABLED)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_scroll_y.grid(row=0, column=1, sticky="ns")
 
         footer = ttk.Frame(main, style="Card.TFrame")
         footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(6, 0))
@@ -654,7 +796,7 @@ class DownloaderUI:
             self.output_browse_button.grid()
             self.debug_actions_frame.grid()
             if not self._json_tab_visible:
-                self.result_tabs.add(self.json_text, text="Debug JSON")
+                self.result_tabs.add(self.json_tab, text="Debug JSON")
                 self._json_tab_visible = True
             if not self._url_tab_visible:
                 self.result_tabs.add(self.url_tab, text="Image URLs")
@@ -665,7 +807,7 @@ class DownloaderUI:
             self.output_browse_button.grid_remove()
             self.debug_actions_frame.grid_remove()
             if self._json_tab_visible:
-                self.result_tabs.hide(self.json_text)
+                self.result_tabs.hide(self.json_tab)
                 self._json_tab_visible = False
             if self._url_tab_visible:
                 self.result_tabs.hide(self.url_tab)
@@ -695,9 +837,25 @@ class DownloaderUI:
 
         popup_frame = ttk.Frame(popup, padding=8)
         popup_frame.pack(fill=tk.BOTH, expand=True)
-        self._popup_log_text = ScrolledText(popup_frame, wrap=tk.WORD, font=("Consolas", 10))
-        self._popup_log_text.pack(fill=tk.BOTH, expand=True)
-        self._popup_log_text.configure(state=tk.DISABLED)
+        popup_frame.columnconfigure(0, weight=1)
+        popup_frame.rowconfigure(0, weight=1)
+        self._popup_log_text = tk.Text(
+            popup_frame,
+            wrap=tk.WORD,
+            font=("Consolas", 10),
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        popup_scroll_y = ttk.Scrollbar(
+            popup_frame,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self._popup_log_text.yview,
+        )
+        self._popup_log_text.configure(yscrollcommand=popup_scroll_y.set, state=tk.DISABLED)
+        self._popup_log_text.grid(row=0, column=0, sticky="nsew")
+        popup_scroll_y.grid(row=0, column=1, sticky="ns")
 
         existing_logs = self.log_text.get("1.0", tk.END)
         self._popup_log_text.configure(state=tk.NORMAL)

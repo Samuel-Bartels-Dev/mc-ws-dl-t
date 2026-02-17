@@ -6,6 +6,7 @@ This folder contains the full documentation set for the manga/comic downloader p
 
 - `TechnicalOverview.md`: architecture and module design.
 - `SetupAndOperations.md`: install, run, test, build, and day-to-day workflow.
+- `UIAndExeRunbook.md`: quick runbook for launching UI and building `dist\mc-ui.exe`.
 - `CliReference.md`: command options and examples.
 - `MaintenanceGuide.md`: support playbook, logging, troubleshooting, and update process.
 

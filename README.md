@@ -44,6 +44,7 @@ Then in VSCode:
 - `documentation/README.md`: doc index and reading order
 - `documentation/TechnicalOverview.md`: architecture and data flow
 - `documentation/SetupAndOperations.md`: setup/run/test/build instructions
+- `documentation/UIAndExeRunbook.md`: launch UI and build standalone `dist\mc-ui.exe`
 - `documentation/CliReference.md`: command option reference
 - `documentation/MaintenanceGuide.md`: support and troubleshooting workflow
 - `documentation/ChangeLog-v1-to-v2.md`: upgrade summary from deprecated version
@@ -105,6 +106,12 @@ or directly:
 
 ```powershell
 .\.venv\Scripts\mc-ui.exe
+```
+
+Build standalone UI EXE:
+
+```powershell
+.\scripts\build-ui-exe.ps1
 ```
 
 UI defaults:

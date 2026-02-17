@@ -106,6 +106,12 @@ Launch desktop UI:
 
 Build output goes to `dist/`.
 
+Build standalone UI EXE:
+
+```powershell
+.\scripts\build-ui-exe.ps1
+```
+
 ## VS Code Notes
 
 - The bootstrap script writes `.vscode/settings.json` and points VS Code to `.venv`.

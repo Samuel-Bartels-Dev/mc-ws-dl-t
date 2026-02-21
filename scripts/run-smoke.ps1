@@ -1,11 +1,11 @@
 [CmdletBinding()]
 param(
-    # Quick smoke target for fetch + parse validation.
+    # Optional single adapter name (example: mangatown).
     [Parameter(Mandatory = $false)]
-    [string]$Url = "https://example.com",
-    # Optional output file path for smoke payload capture.
+    [string]$Site = "",
+    # Maximum runtime budget per site in seconds.
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ""
+    [int]$MaxSecondsPerSite = 60
 )
 
 Set-StrictMode -Version Latest
@@ -20,10 +20,13 @@ if (-not (Test-Path $venvPython)) {
 
 Set-Location $projectRoot
 
-$args = @("-m", "mc_ws_dl_t", $Url, "--log-level", "INFO")
-if ($OutputPath) {
-    $args += @("--output", $OutputPath)
+$args = @(
+    ".\scripts\smoke_test_sites.py",
+    "--max-seconds-per-site", "$MaxSecondsPerSite"
+)
+if ($Site) {
+    $args += @("--site", $Site)
 }
 
-Write-Host "[run-smoke] Running downloader smoke test against: $Url"
+Write-Host "[run-smoke] Running parser smoke tests for all supported sites."
 & $venvPython @args

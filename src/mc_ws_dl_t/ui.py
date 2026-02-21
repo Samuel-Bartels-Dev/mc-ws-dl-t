@@ -5,6 +5,7 @@ import queue
 import threading
 import time
 import traceback
+from decimal import Decimal
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -20,6 +21,15 @@ from .core import (
     download_images_from_payload,
     download_selected_chapters_as_cbz,
     run_download,
+)
+from .gui.validation import (
+    extract_chapter_number,
+    normalize_directory,
+    normalize_output_file,
+    parse_non_negative_int,
+    parse_optional_chapter_range,
+    parse_positive_int,
+    validate_http_url,
 )
 from .history import load_history
 from .parsers import get_available_parser_names
@@ -87,6 +97,13 @@ class DownloaderUI:
         self.series_status_var = tk.StringVar(value="No series loaded.")
         self.chapter_filter_var = tk.StringVar(value="All chapters")
         self.retry_per_chapter_var = tk.StringVar(value="1")
+        self.chapter_start_var = tk.StringVar(value="")
+        self.chapter_end_var = tk.StringVar(value="")
+        self.overall_progress_var = tk.DoubleVar(value=0.0)
+        self.chapter_progress_var = tk.DoubleVar(value=0.0)
+        self.overall_progress_text_var = tk.StringVar(value="Overall progress: 0%")
+        self.chapter_progress_text_var = tk.StringVar(value="Current chapter: idle")
+        self._batch_total = 0
         self._json_tab_visible = True
         self._url_tab_visible = True
 
@@ -475,6 +492,14 @@ class DownloaderUI:
             font=("Segoe UI Semibold", 9),
         )
         self.style.map("Treeview.Heading", background=[("active", flat_bg)])
+        self.style.configure(
+            "Accent.Horizontal.TProgressbar",
+            troughcolor=flat_bg,
+            background=palette["accent"],
+            bordercolor=flat_bg,
+            lightcolor=palette["accent"],
+            darkcolor=palette["accent"],
+        )
 
         # Modern slim scrollbars (no arrows), closer to web app visuals.
         vertical_scroll_layout: list[tuple[str, Any]] = [
@@ -568,6 +593,22 @@ class DownloaderUI:
                 )
         if self._log_popup and self._log_popup.winfo_exists():
             self._log_popup.configure(bg=palette["bg"])
+        self._configure_log_tags()
+
+    def _configure_log_tags(self) -> None:
+        palette = self._current_palette
+        tag_colors = {
+            "log_info": palette["log_fg"],
+            "log_debug": "#38bdf8",
+            "log_warning": "#f59e0b",
+            "log_error": "#ef4444",
+            "log_success": "#22c55e",
+        }
+        for widget in (getattr(self, "log_text", None), self._popup_log_text):
+            if widget is None or not widget.winfo_exists():
+                continue
+            for tag_name, color in tag_colors.items():
+                widget.tag_configure(tag_name, foreground=color)
 
     def _build_layout(self) -> None:
         self.root.configure(bg="#e9edf5")
@@ -832,11 +873,18 @@ class DownloaderUI:
         )
         self.retry_spin.grid(row=0, column=6, padx=(0, 12))
 
+        ttk.Label(chapter_btns, text="Range").grid(row=0, column=7, padx=(0, 6))
+        self.chapter_start_entry = ttk.Entry(chapter_btns, textvariable=self.chapter_start_var, width=6)
+        self.chapter_start_entry.grid(row=0, column=8, padx=(0, 4))
+        ttk.Label(chapter_btns, text="to").grid(row=0, column=9, padx=(0, 4))
+        self.chapter_end_entry = ttk.Entry(chapter_btns, textvariable=self.chapter_end_var, width=6)
+        self.chapter_end_entry.grid(row=0, column=10, padx=(0, 12))
+
         ttk.Button(chapter_btns, text="Select All", command=self._select_all_chapters, style="Slim.TButton").grid(
-            row=0, column=7, padx=(0, 8)
+            row=0, column=11, padx=(0, 8)
         )
         ttk.Button(chapter_btns, text="Clear Selection", command=self._clear_chapter_selection, style="Slim.TButton").grid(
-            row=0, column=8, padx=(0, 4)
+            row=0, column=12, padx=(0, 4)
         )
 
         chapter_list_frame = ttk.Frame(chapter_tab)
@@ -908,8 +956,40 @@ class DownloaderUI:
         self.log_text.grid(row=0, column=0, sticky="nsew")
         self.log_scroll_y.grid(row=0, column=1, sticky="ns")
 
+        progress_footer = ttk.Frame(main, style="Card.TFrame", padding=(4, 2))
+        progress_footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(6, 0))
+        progress_footer.columnconfigure(1, weight=1)
+        progress_footer.columnconfigure(3, weight=1)
+
+        ttk.Label(progress_footer, text="Overall", style="Hint.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.overall_progress = ttk.Progressbar(
+            progress_footer,
+            style="Accent.Horizontal.TProgressbar",
+            orient=tk.HORIZONTAL,
+            mode="determinate",
+            maximum=100,
+            variable=self.overall_progress_var,
+        )
+        self.overall_progress.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        ttk.Label(progress_footer, textvariable=self.overall_progress_text_var, style="Hint.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(0, 8)
+        )
+
+        self.chapter_progress = ttk.Progressbar(
+            progress_footer,
+            style="Accent.Horizontal.TProgressbar",
+            orient=tk.HORIZONTAL,
+            mode="determinate",
+            maximum=100,
+            variable=self.chapter_progress_var,
+        )
+        self.chapter_progress.grid(row=0, column=3, sticky="ew", padx=(0, 10))
+        ttk.Label(progress_footer, textvariable=self.chapter_progress_text_var, style="Hint.TLabel").grid(
+            row=0, column=4, sticky="w"
+        )
+
         footer = ttk.Frame(main, style="Card.TFrame")
-        footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(6, 0))
+        footer.grid(row=3, column=0, sticky="ew", padx=4, pady=(4, 0))
         footer.columnconfigure(0, weight=1)
         ttk.Label(footer, textvariable=self.summary_var, style="Hint.TLabel", anchor=tk.W).grid(row=0, column=0, sticky="w")
         ttk.Label(footer, textvariable=self.status_var, style="Hint.TLabel", anchor=tk.E).grid(row=0, column=1, sticky="e")
@@ -1024,15 +1104,28 @@ class DownloaderUI:
         self._apply_theme(self.theme_var.get())
 
     def _append_log(self, line: str) -> None:
+        tag_name = self._resolve_log_tag(line)
         self.log_text.configure(state=tk.NORMAL)
-        self.log_text.insert(tk.END, f"{line}\n")
+        self.log_text.insert(tk.END, f"{line}\n", tag_name)
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
         if self._popup_log_text and self._popup_log_text.winfo_exists():
             self._popup_log_text.configure(state=tk.NORMAL)
-            self._popup_log_text.insert(tk.END, f"{line}\n")
+            self._popup_log_text.insert(tk.END, f"{line}\n", tag_name)
             self._popup_log_text.see(tk.END)
             self._popup_log_text.configure(state=tk.DISABLED)
+
+    def _resolve_log_tag(self, line: str) -> str:
+        upper_line = line.upper()
+        if "[ERROR]" in upper_line:
+            return "log_error"
+        if "[WARNING]" in upper_line or "[WARN]" in upper_line:
+            return "log_warning"
+        if "[DEBUG]" in upper_line:
+            return "log_debug"
+        if "[SUCCESS]" in upper_line:
+            return "log_success"
+        return "log_info"
 
     def _clear_logs(self) -> None:
         self.log_text.configure(state=tk.NORMAL)
@@ -1122,50 +1215,38 @@ class DownloaderUI:
             self.cancel_queue_button.configure(state=tk.NORMAL if not self._queue_cancel_event.is_set() else tk.DISABLED)
             self.retry_failed_button.configure(state=tk.DISABLED)
             self.retry_spin.configure(state=tk.DISABLED)
+            self.chapter_start_entry.configure(state=tk.DISABLED)
+            self.chapter_end_entry.configure(state=tk.DISABLED)
         else:
             self.pause_queue_button.configure(state=tk.DISABLED)
             self.resume_queue_button.configure(state=tk.DISABLED)
             self.cancel_queue_button.configure(state=tk.DISABLED)
             self.retry_spin.configure(state=tk.NORMAL if not self.is_running else tk.DISABLED)
+            range_entry_state = tk.NORMAL if not self.is_running else tk.DISABLED
+            self.chapter_start_entry.configure(state=range_entry_state)
+            self.chapter_end_entry.configure(state=range_entry_state)
             can_retry_failed = bool(self.current_failed_chapter_urls) and not self.is_running
             self.retry_failed_button.configure(state=tk.NORMAL if can_retry_failed else tk.DISABLED)
 
     def _parse_positive_int(self, raw_value: str, field_name: str) -> int:
-        try:
-            value = int(raw_value.strip())
-        except ValueError as exc:
-            raise ValueError(f"{field_name} must be a number.") from exc
-        if value <= 0:
-            raise ValueError(f"{field_name} must be greater than zero.")
-        return value
+        return parse_positive_int(raw_value, field_name)
 
     def _parse_non_negative_int(self, raw_value: str, field_name: str) -> int:
-        try:
-            value = int(raw_value.strip())
-        except ValueError as exc:
-            raise ValueError(f"{field_name} must be a number.") from exc
-        if value < 0:
-            raise ValueError(f"{field_name} cannot be negative.")
-        return value
+        return parse_non_negative_int(raw_value, field_name)
 
     def _build_options_from_form(self) -> DownloadOptions:
-        url = self.url_var.get().strip()
-        if not url:
-            raise ValueError("URL is required.")
+        url = validate_http_url(self.url_var.get(), field_name="URL")
 
         timeout_seconds = self._parse_positive_int(self.timeout_var.get(), "Timeout")
         wait_seconds = self._parse_positive_int(self.wait_var.get(), "Wait")
         retries = self._parse_positive_int(self.retries_var.get(), "Retries")
 
-        output_path = self.output_var.get().strip()
-        output = Path(output_path) if output_path else None
+        output = normalize_output_file(self.output_var.get())
         image_dir_path = self.image_dir_var.get().strip()
 
         image_download_dir: Path | None = None
         if self.auto_download_var.get():
-            if not image_dir_path:
-                raise ValueError("Image folder is required when auto-download is enabled.")
-            image_download_dir = Path(image_dir_path)
+            image_download_dir = normalize_directory(image_dir_path, "Image folder")
 
         return DownloadOptions(
             url=url,
@@ -1212,6 +1293,9 @@ class DownloaderUI:
             return
 
         self.current_payload = None
+        self._reset_progress_indicators()
+        self._set_overall_progress(completed=0, total=1)
+        self._set_chapter_progress(percent=15.0, title="Fetching chapter")
         self.summary_var.set("Download in progress...")
         self._set_busy(True)
         self._append_log("----- New run started -----")
@@ -1290,22 +1374,56 @@ class DownloaderUI:
     def _clear_chapter_selection(self) -> None:
         self.chapter_table.selection_remove(self.chapter_table.selection())
 
+    def _select_chapters_by_range(
+        self,
+        range_start: Decimal | None,
+        range_end: Decimal | None,
+    ) -> list[SeriesChapter]:
+        matched: list[SeriesChapter] = []
+        for chapter in self.current_series_chapters:
+            chapter_number = extract_chapter_number(chapter.chapter_key, chapter.title)
+            if chapter_number is None:
+                continue
+            if range_start is not None and chapter_number < range_start:
+                continue
+            if range_end is not None and chapter_number > range_end:
+                continue
+            matched.append(chapter)
+        return matched
+
+    def _reset_progress_indicators(self) -> None:
+        self._batch_total = 0
+        self.overall_progress_var.set(0.0)
+        self.chapter_progress_var.set(0.0)
+        self.overall_progress_text_var.set("Overall progress: 0%")
+        self.chapter_progress_text_var.set("Current chapter: idle")
+
+    def _set_overall_progress(self, completed: int, total: int) -> None:
+        safe_total = total if total > 0 else 1
+        ratio = min(100.0, (completed / safe_total) * 100.0)
+        self.overall_progress_var.set(ratio)
+        self.overall_progress_text_var.set(f"Overall progress: {int(ratio)}% ({completed}/{total})")
+
+    def _set_chapter_progress(self, percent: float, title: str) -> None:
+        bounded = max(0.0, min(100.0, percent))
+        self.chapter_progress_var.set(bounded)
+        self.chapter_progress_text_var.set(f"Current chapter: {title} ({int(bounded)}%)")
+
     def _start_series_discovery(self) -> None:
         if self.is_running:
             return
 
-        series_url = self.url_var.get().strip()
-        if not series_url:
-            messagebox.showerror("Missing URL", "Enter a series URL first.")
-            return
-
         try:
+            series_url = validate_http_url(self.url_var.get(), field_name="Series URL")
             config = self._build_runtime_config()
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
             return
 
         self._set_busy(True)
+        self._reset_progress_indicators()
+        self._set_overall_progress(completed=0, total=1)
+        self._set_chapter_progress(percent=15.0, title="Loading series metadata")
         self.status_var.set("Loading chapters...")
         self.series_status_var.set("Loading series information...")
         self._append_log("----- Series discovery started -----")
@@ -1342,18 +1460,17 @@ class DownloaderUI:
             return
 
         selected_items = list(self.chapter_table.selection())
-        if not selected_items:
-            messagebox.showinfo("No selection", "Select one or more chapters first.")
-            return
 
         base_path_raw = self.image_dir_var.get().strip()
-        if not base_path_raw:
-            messagebox.showerror("Missing folder", "Choose an image folder first.")
-            return
 
         try:
             config = self._build_runtime_config()
             retry_per_chapter = self._parse_non_negative_int(self.retry_per_chapter_var.get(), "Retry/chapter")
+            base_directory = normalize_directory(base_path_raw, "Image folder")
+            range_start, range_end = parse_optional_chapter_range(
+                self.chapter_start_var.get(),
+                self.chapter_end_var.get(),
+            )
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
             return
@@ -1364,16 +1481,24 @@ class DownloaderUI:
             if self.chapter_table.item(item, "values")
         }
         selected_chapters = [chapter for chapter in self.current_series_chapters if chapter.url in selected_urls]
+
+        if range_start is not None or range_end is not None:
+            selected_chapters = self._select_chapters_by_range(range_start=range_start, range_end=range_end)
+
         if not selected_chapters:
-            messagebox.showinfo("No selection", "No valid chapters selected.")
+            if range_start is not None or range_end is not None:
+                messagebox.showinfo("No chapters", "No chapters matched the chapter range.")
+            else:
+                messagebox.showinfo("No selection", "Select one or more chapters first.")
             return
 
+        self._reset_progress_indicators()
         self._start_chapter_queue(
             selected_chapters=selected_chapters,
-            base_dir=Path(base_path_raw),
+            base_dir=base_directory,
             config=config,
             retry_per_chapter=retry_per_chapter,
-            queue_label="selected chapters",
+            queue_label=f"{len(selected_chapters)} chapter(s)",
         )
 
     def _start_chapter_queue(
@@ -1391,6 +1516,9 @@ class DownloaderUI:
         self.queue_paused = False
         self.current_failed_chapter_urls = []
         self._set_busy(True)
+        self._batch_total = len(selected_chapters)
+        self._set_overall_progress(completed=0, total=self._batch_total)
+        self._set_chapter_progress(percent=0.0, title="Queue started")
         self.status_var.set(f"Queue started for {queue_label}.")
         self.summary_var.set(f"Queue running for {queue_label}...")
         self._append_log(f"----- Queue started ({queue_label}) -----")
@@ -1442,13 +1570,11 @@ class DownloaderUI:
             return
 
         base_path_raw = self.image_dir_var.get().strip()
-        if not base_path_raw:
-            messagebox.showerror("Missing folder", "Choose an image folder first.")
-            return
 
         try:
             config = self._build_runtime_config()
             retry_per_chapter = self._parse_non_negative_int(self.retry_per_chapter_var.get(), "Retry/chapter")
+            base_directory = normalize_directory(base_path_raw, "Image folder")
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
             return
@@ -1461,7 +1587,7 @@ class DownloaderUI:
 
         self._start_chapter_queue(
             selected_chapters=chapters_to_retry,
-            base_dir=Path(base_path_raw),
+            base_dir=base_directory,
             config=config,
             retry_per_chapter=retry_per_chapter,
             queue_label=f"{len(chapters_to_retry)} failed chapter(s)",
@@ -1515,23 +1641,23 @@ class DownloaderUI:
             return
 
         image_dir_path = self.image_dir_var.get().strip()
-        if not image_dir_path:
-            messagebox.showerror("Missing folder", "Choose an image folder first.")
-            return
 
         try:
             config = self._build_runtime_config()
+            target_dir = normalize_directory(image_dir_path, "Image folder")
         except ValueError as exc:
             messagebox.showerror("Invalid input", str(exc))
             return
 
         self._set_busy(True)
+        self._reset_progress_indicators()
+        self._set_overall_progress(completed=0, total=1)
+        self._set_chapter_progress(percent=20.0, title="Downloading image files")
         self.status_var.set("Downloading images...")
         self.summary_var.set("Image download in progress...")
         self._append_log("----- Image download started from current payload -----")
 
         payload_copy = dict(self.current_payload)
-        target_dir = Path(image_dir_path)
         worker = threading.Thread(
             target=self._run_image_download_worker,
             args=(payload_copy, target_dir, config),
@@ -1610,6 +1736,8 @@ class DownloaderUI:
                         f"{payload.title} | Chapters: {len(payload.chapters)} | Parser: {payload.parser}"
                     )
                     self.summary_var.set("Series chapters loaded. Select chapters to download as CBZ.")
+                    self._set_overall_progress(completed=1, total=1)
+                    self._set_chapter_progress(percent=100.0, title="Series metadata loaded")
                     self._update_queue_control_states()
             elif event_type == "chapter_progress":
                 if isinstance(payload, dict):
@@ -1620,20 +1748,32 @@ class DownloaderUI:
 
                     if progress_event == "batch_start":
                         total_val = int(payload.get("total", 0))
+                        self._batch_total = total_val
+                        self._set_overall_progress(completed=0, total=total_val)
+                        self._set_chapter_progress(percent=0.0, title="Waiting for chapter")
                         self.status_var.set(f"Queue started. Chapters: {total_val}")
                         self.summary_var.set(f"Queue running. Total chapters: {total_val}")
                     elif progress_event == "chapter_start":
+                        self._set_chapter_progress(percent=20.0, title=chapter_title or "Chapter")
+                        self._set_overall_progress(completed=max(index - 1, 0), total=total or self._batch_total)
                         self.status_var.set(f"Chapter {index}/{total}: {chapter_title}")
                     elif progress_event == "chapter_retry":
+                        self._set_chapter_progress(percent=45.0, title=chapter_title or "Retrying chapter")
                         next_attempt = int(payload.get("next_attempt", 0))
                         self._append_log(
                             f"Retry scheduled for chapter {index}/{total}: {chapter_title} (attempt {next_attempt})"
                         )
                     elif progress_event == "chapter_downloaded":
+                        self._set_chapter_progress(percent=100.0, title=chapter_title or "Downloaded")
+                        self._set_overall_progress(completed=index, total=total or self._batch_total)
                         self.status_var.set(f"Downloaded {index}/{total}: {chapter_title}")
                     elif progress_event == "chapter_skipped":
+                        self._set_chapter_progress(percent=100.0, title=chapter_title or "Skipped")
+                        self._set_overall_progress(completed=index, total=total or self._batch_total)
                         self.status_var.set(f"Skipped {index}/{total}: {chapter_title} (already downloaded)")
                     elif progress_event == "chapter_failed":
+                        self._set_chapter_progress(percent=100.0, title=chapter_title or "Failed")
+                        self._set_overall_progress(completed=index, total=total or self._batch_total)
                         error = str(payload.get("error", ""))
                         self.status_var.set(f"Failed {index}/{total}: {chapter_title}")
                         if error:
@@ -1641,12 +1781,16 @@ class DownloaderUI:
                     elif progress_event == "batch_canceled":
                         completed = int(payload.get("completed", 0))
                         total_val = int(payload.get("total", 0))
+                        self._set_overall_progress(completed=completed, total=total_val)
+                        self._set_chapter_progress(percent=0.0, title="Canceled")
                         self.status_var.set(f"Queue canceled. Completed {completed}/{total_val}.")
                     elif progress_event == "batch_complete":
                         downloaded = int(payload.get("downloaded", 0))
                         skipped = int(payload.get("skipped", 0))
                         failed = int(payload.get("failed", 0))
                         canceled = bool(payload.get("canceled", False))
+                        self._set_overall_progress(completed=total, total=total or self._batch_total)
+                        self._set_chapter_progress(percent=100.0, title="Queue finished")
                         end_state = "canceled" if canceled else "complete"
                         self.summary_var.set(
                             f"Queue {end_state}. New: {downloaded} | Skipped: {skipped} | Failed: {failed}"
@@ -1667,6 +1811,8 @@ class DownloaderUI:
                         failed = int(download_info.get("failed", 0))
                         summary_line = f"{summary_line} | Saved: {downloaded} | Failed: {failed}"
                     self.summary_var.set(summary_line)
+                self._set_overall_progress(completed=1, total=1)
+                self._set_chapter_progress(percent=100.0, title="Chapter parse complete")
             elif event_type == "image_download_result":
                 if isinstance(payload, dict):
                     if self.current_payload is None:
@@ -1679,6 +1825,8 @@ class DownloaderUI:
                     self.summary_var.set(
                         f"Image download complete. Saved: {downloaded} | Failed: {failed} | Folder: {output_dir}"
                     )
+                    self._set_overall_progress(completed=1, total=1)
+                    self._set_chapter_progress(percent=100.0, title="Image download complete")
             elif event_type == "chapter_download_result":
                 if isinstance(payload, dict):
                     self.queue_active = False
@@ -1721,6 +1869,12 @@ class DownloaderUI:
                         f"New: {downloaded_count} | Skipped: {skipped_count} | Failed: {failed_count} "
                         f"| Canceled: {'Yes' if was_canceled else 'No'} | Root: {series_root}"
                     )
+                    total_complete = downloaded_count + skipped_count + failed_count
+                    self._set_overall_progress(
+                        completed=total_complete,
+                        total=max(total_complete, self._batch_total),
+                    )
+                    self._set_chapter_progress(percent=100.0, title="Queue complete")
                     self._update_queue_control_states()
             elif event_type == "error":
                 self.queue_active = False

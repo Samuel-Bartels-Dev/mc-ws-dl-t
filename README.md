@@ -135,7 +135,19 @@ UI defaults:
 ## Run Quick Smoke Test
 
 ```powershell
-.\scripts\run-smoke.ps1 -Url "https://example.com"
+.\scripts\run-smoke.ps1
+```
+
+Run smoke test for one site adapter:
+
+```powershell
+.\scripts\run-smoke.ps1 -Site mangatown
+```
+
+Direct Python invocation (more options):
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\smoke_test_sites.py --max-seconds-per-site 60
 ```
 
 ## Package Build
@@ -144,3 +156,12 @@ UI defaults:
 python -m pip install build
 python -m build
 ```
+
+## Windows EXE Build
+
+```powershell
+.\scripts\build-ui-exe.ps1
+```
+
+Detailed runbook:
+- `docs/BUILD_WINDOWS_EXE.md`

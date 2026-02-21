@@ -1,6 +1,7 @@
 import json
 import logging
 import shutil
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -63,8 +64,27 @@ def _slugify(value: str) -> str:
     return slug[:96] or "untitled-chapter"
 
 
+def _resolve_path(path: Path) -> Path:
+    # Resolve without requiring existence so we can validate future write locations safely.
+    return path.expanduser().resolve(strict=False)
+
+
+def _ensure_path_within_root(root: Path, candidate: Path, label: str) -> Path:
+    # This prevents path traversal by forcing every write target to stay inside one trusted root.
+    resolved_root = _resolve_path(root)
+    resolved_candidate = _resolve_path(candidate)
+    if resolved_candidate != resolved_root and resolved_root not in resolved_candidate.parents:
+        raise RuntimeError(f"{label} escapes the selected output directory: {resolved_candidate}")
+    return resolved_candidate
+
+
+def _safe_join_root(root: Path, child_name: str, label: str) -> Path:
+    return _ensure_path_within_root(root, root / child_name, label)
+
+
 def _build_series_root(base_library_dir: Path, series_title: str) -> Path:
-    return base_library_dir / _slugify(series_title)
+    # Series folders must always stay under the chosen library root.
+    return _safe_join_root(base_library_dir, _slugify(series_title), "Series folder path")
 
 
 def build_series_root_path(base_library_dir: Path, series_title: str) -> Path:
@@ -88,6 +108,7 @@ def download_images(
     referer: str | None = None,
 ) -> dict[str, Any]:
     # Downloads image URLs with retries and writes a deterministic numbered sequence.
+    output_dir = _resolve_path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     total = len(image_urls)
     downloaded_files: list[str] = []
@@ -108,7 +129,11 @@ def download_images(
     try:
         for index, image_url in enumerate(image_urls, start=1):
             filename = _build_image_filename(index=index, image_url=image_url)
-            output_path = output_dir / filename
+            output_path = _ensure_path_within_root(
+                output_dir,
+                output_dir / filename,
+                "Image file path",
+            )
             logger.info("Downloading image %s/%s: %s", index, total, image_url)
             try:
                 request_headers: dict[str, str] | None = {"Referer": referer} if referer else None
@@ -155,11 +180,13 @@ def download_images_from_payload(
     config: ScraperConfig,
     logger: logging.Logger,
 ) -> dict[str, Any]:
+    output_base_dir = _resolve_path(output_base_dir)
+    output_base_dir.mkdir(parents=True, exist_ok=True)
     image_urls_raw = payload.get("image_urls")
     image_urls = [str(url) for url in image_urls_raw] if isinstance(image_urls_raw, list) else []
     title = str(payload.get("title", "untitled-chapter"))
     source_url = str(payload.get("source_url", "")) or None
-    chapter_dir = output_base_dir / _slugify(title)
+    chapter_dir = _safe_join_root(output_base_dir, _slugify(title), "Chapter output folder path")
     return download_images(
         image_urls=image_urls,
         output_dir=chapter_dir,
@@ -246,14 +273,27 @@ def create_cbz_from_files(
     cbz_path: Path,
     logger: logging.Logger,
     cover_file: Path | None = None,
+    allowed_root: Path | None = None,
 ) -> Path:
+    cbz_path = _resolve_path(cbz_path)
     cbz_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_allowed_root = _resolve_path(allowed_root) if allowed_root else None
+
     with zipfile.ZipFile(cbz_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if cover_file and cover_file.exists():
             archive.write(cover_file, arcname=f"0000_cover{cover_file.suffix.lower() or '.jpg'}")
         for file_path in sorted((Path(path) for path in image_files), key=lambda path: path.name):
-            if file_path.exists():
-                archive.write(file_path, arcname=file_path.name)
+            resolved_file_path = _resolve_path(file_path)
+            if resolved_allowed_root is not None:
+                if (
+                    resolved_file_path != resolved_allowed_root
+                    and resolved_allowed_root not in resolved_file_path.parents
+                ):
+                    logger.warning("Skipping out-of-root chapter file: %s", resolved_file_path)
+                    continue
+
+            if resolved_file_path.exists():
+                archive.write(resolved_file_path, arcname=resolved_file_path.name)
     logger.info("CBZ created: %s", cbz_path)
     return cbz_path
 
@@ -298,10 +338,12 @@ def download_selected_chapters_as_cbz(
         if progress_callback:
             progress_callback({"event": event, **data})
 
+    library_root_dir = _resolve_path(library_root_dir)
     series_root = _build_series_root(library_root_dir, series_info.title)
-    chapters_dir = series_root / "chapters"
-    cbz_dir = series_root / "cbz"
+    chapters_dir = _safe_join_root(series_root, "chapters", "Chapter temp root path")
+    cbz_dir = _safe_join_root(series_root, "cbz", "CBZ output path")
     series_root.mkdir(parents=True, exist_ok=True)
+    chapters_dir.mkdir(parents=True, exist_ok=True)
 
     history = load_history(series_root)
     history["series_url"] = series_info.url
@@ -374,6 +416,12 @@ def download_selected_chapters_as_cbz(
                 break
 
             try:
+                chapter_temp_dir = Path(
+                    tempfile.mkdtemp(
+                        prefix="chapter_",
+                        dir=str(chapters_dir),
+                    )
+                )
                 options = DownloadOptions(
                     url=chapter.url,
                     browser=browser,
@@ -382,7 +430,7 @@ def download_selected_chapters_as_cbz(
                     wait_seconds=config.wait_seconds,
                     retries=config.retries,
                     force_parser="mangatown",
-                    image_download_dir=chapters_dir,
+                    image_download_dir=chapter_temp_dir,
                     output=None,
                 )
                 payload = run_download(options, logger=logger)
@@ -392,7 +440,13 @@ def download_selected_chapters_as_cbz(
                     raise RuntimeError(f"Chapter did not produce download summary: {chapter.url}")
                 output_dir_raw = download_info.get("output_dir")
                 if isinstance(output_dir_raw, str) and output_dir_raw.strip():
-                    chapter_temp_dir = Path(output_dir_raw)
+                    if chapter_temp_dir is None:
+                        raise RuntimeError("Chapter temp root was not initialized before output validation.")
+                    _ensure_path_within_root(
+                        chapter_temp_dir,
+                        Path(output_dir_raw),
+                        "Chapter temp output path",
+                    )
                 image_files_raw = download_info.get("files")
                 image_files = [str(path) for path in image_files_raw] if isinstance(image_files_raw, list) else []
                 if not image_files:
@@ -404,6 +458,7 @@ def download_selected_chapters_as_cbz(
                     cbz_path=cbz_dir / cbz_name,
                     logger=logger,
                     cover_file=cover_file,
+                    allowed_root=chapter_temp_dir,
                 )
                 mark_chapter_downloaded(
                     history=history,
@@ -487,6 +542,12 @@ def download_selected_chapters_as_cbz(
 
     history["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
     history_path = save_history(series_root, history)
+
+    # Final cleanup pass for chapter temp root in case a previous attempt left it empty.
+    try:
+        _cleanup_chapter_temp_dir(chapter_temp_dir=None, chapters_root=chapters_dir, logger=logger)
+    except Exception as exc:
+        logger.debug("Final chapter temp cleanup skipped: %s", exc)
 
     failed_items = [item for item in summary if str(item.get("status")) == "failed"]
     skipped_items = [item for item in summary if str(item.get("status")) == "skipped"]

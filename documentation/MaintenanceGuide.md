@@ -7,6 +7,7 @@
 3. Identify whether failure occurred in static or dynamic path.
 4. Add/adjust tests before code changes when possible.
 5. Re-run tests, lint, and type checks before release.
+6. Run site smoke tests and review per-site PASS/FAIL summary.
 
 ## Troubleshooting
 
@@ -33,6 +34,16 @@
 - Use dynamic mode if content is injected after page load.
 - Extend parser plugin selectors for that source if needed.
 
+### Smoke test failures
+
+- Run one adapter only:
+  - `.\scripts\run-smoke.ps1 -Site <name>`
+- Check URL samples:
+  - `tests/smoke_urls.json`
+- Check last recorded run output:
+  - `docs/dev/SMOKE_TEST_RESULTS.md`
+- If hosts redirect unexpectedly, update smoke URLs and re-run.
+
 ### Chapter already downloaded / skipped unexpectedly
 
 - Check series history file: `.mc_ws_dl_history.json` under the series folder.
@@ -47,6 +58,8 @@
 - Keep request/driver changes isolated in `fetcher.py`.
 - Keep CLI arguments backward compatible unless versioning is updated.
 - Add test coverage for every new parsing rule.
+- Keep smoke runbook updated when adding adapters:
+  - `documentation/SmokeTestingRunbook.md`
 
 ## Adding a New Website Parser
 
@@ -54,6 +67,8 @@
 2. Register the plugin in `src/mc_ws_dl_t/parsers/registry.py`.
 3. Add tests in `tests/test_parser_registry.py` and a focused parser test file if needed.
 4. Run `.\scripts\run-tests.ps1` and `.\scripts\run-quality.ps1`.
+5. Add smoke URL entry in `tests/smoke_urls.json`.
+6. Re-run smoke test and update `docs/dev/SMOKE_TEST_RESULTS.md`.
 
 ## Versioning Notes
 

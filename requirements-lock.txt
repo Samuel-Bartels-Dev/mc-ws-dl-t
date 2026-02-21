@@ -1,0 +1,11 @@
+# Lock-style dependency file for reproducible developer installs.
+# Install with: pip install -r requirements-lock.txt
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+selenium==4.26.1
+pytest==8.3.4
+ruff==0.8.6
+mypy==1.14.1
+types-requests==2.32.0.20241016
+

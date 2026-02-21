@@ -75,7 +75,13 @@ or:
 Smoke test:
 
 ```powershell
-.\scripts\run-smoke.ps1 -Url "https://example.com"
+.\scripts\run-smoke.ps1
+```
+
+Smoke one adapter:
+
+```powershell
+.\scripts\run-smoke.ps1 -Site mangatown
 ```
 
 Launch desktop UI:
@@ -91,7 +97,9 @@ Launch desktop UI:
 2. Set `Image folder` to your manga library base path.
 3. Click `Load Chapters` to parse all available chapters.
 4. In `Series Chapters`, multi-select the chapters you want.
+   You can also use chapter range boxes (`Range start` and `Range end`) for numeric chapter selection.
 5. Click `Download Selected CBZ`.
+   Progress bars show overall batch progress and current chapter state.
 6. Tool writes:
    - chapter image folders under `<series>/chapters/`
    - `.cbz` files under `<series>/cbz/`
@@ -111,6 +119,9 @@ Build standalone UI EXE:
 ```powershell
 .\scripts\build-ui-exe.ps1
 ```
+
+Detailed Windows EXE runbook:
+- `docs/BUILD_WINDOWS_EXE.md`
 
 ## VS Code Notes
 

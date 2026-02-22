@@ -13,6 +13,12 @@ def test_resolve_parser_for_mangatown_mobile_domain() -> None:
     assert parser_plugin.name == "mangatown"
 
 
+def test_resolve_parser_for_webtoons_domain() -> None:
+    parser_plugin = resolve_parser_for_url("https://www.webtoons.com/en/fantasy/tower-of-god/list?title_no=95")
+    assert parser_plugin is not None
+    assert parser_plugin.name == "webtoons"
+
+
 def test_parse_for_url_uses_generic_for_unknown_domain() -> None:
     html = """
     <html>

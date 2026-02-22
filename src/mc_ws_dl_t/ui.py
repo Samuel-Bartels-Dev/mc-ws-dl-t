@@ -8,7 +8,7 @@ import traceback
 from decimal import Decimal
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Any, cast
 
 from .config import ScraperConfig
@@ -305,9 +305,34 @@ class DownloaderUI:
     def _configure_style(self) -> None:
         self.style = ttk.Style(self.root)
         self.style.theme_use("clam")
-        self.style.configure("Title.TLabel", font=("Segoe UI Semibold", 14))
-        self.style.configure("Primary.TButton", padding=(8, 3))
-        self.style.configure("Slim.TButton", padding=(6, 2))
+        self._ui_font_family = self._pick_font_family(
+            ("Segoe UI Variable Text", "Aptos", "Bahnschrift", "Segoe UI"),
+            fallback="TkDefaultFont",
+        )
+        self._heading_font_family = self._pick_font_family(
+            ("Segoe UI Variable Display", "Aptos Display", "Bahnschrift SemiBold", "Segoe UI Semibold"),
+            fallback=self._ui_font_family,
+        )
+        self._mono_font_family = self._pick_font_family(
+            ("Cascadia Code", "JetBrains Mono", "Consolas"),
+            fallback="TkFixedFont",
+        )
+
+        self.style.configure(".", font=(self._ui_font_family, 10))
+        self.style.configure("Title.TLabel", font=(self._heading_font_family, 16, "bold"))
+        self.style.configure("Primary.TButton", padding=(12, 5), font=(self._heading_font_family, 9, "bold"))
+        self.style.configure("Slim.TButton", padding=(8, 4), font=(self._ui_font_family, 9))
+
+    def _pick_font_family(self, candidates: tuple[str, ...], fallback: str) -> str:
+        try:
+            available = {name.lower(): name for name in tkfont.families(self.root)}
+        except Exception:
+            return fallback
+        for candidate in candidates:
+            match = available.get(candidate.lower())
+            if match:
+                return match
+        return fallback
 
     def _on_theme_change(self) -> None:
         self._apply_theme(self.theme_var.get())
@@ -315,46 +340,56 @@ class DownloaderUI:
     def _apply_theme(self, mode: str) -> None:
         palettes: dict[str, dict[str, str]] = {
             "light": {
-                "bg": "#edf1f5",
-                "panel": "#f6f8fb",
+                "bg": "#e8edf2",
+                "panel": "#f4f7fa",
                 "surface": "#ffffff",
-                "fg": "#1f2a37",
-                "muted": "#5d6b7c",
-                "border": "#cfd8e3",
-                "accent": "#2563eb",
-                "accent_hover": "#1f59d1",
+                "fg": "#0f1724",
+                "muted": "#5b6877",
+                "border": "#ccd6e0",
+                "panel_border": "#d8e0e8",
+                "input_border": "#b9c4d0",
+                "accent": "#0f766e",
+                "accent_hover": "#0d5f59",
                 "accent_fg": "#ffffff",
-                "text_bg": "#f8fafc",
-                "text_fg": "#111827",
+                "danger": "#c2410c",
+                "danger_hover": "#9a3412",
+                "text_bg": "#f9fbfd",
+                "text_fg": "#0f1724",
                 "tree_bg": "#ffffff",
-                "tree_fg": "#1f2937",
-                "tree_sel_bg": "#2563eb",
+                "tree_fg": "#1c2836",
+                "tree_sel_bg": "#0f766e",
                 "tree_sel_fg": "#ffffff",
-                "tree_heading_bg": "#e7edf4",
-                "tree_heading_fg": "#1f2937",
-                "log_bg": "#0f1724",
-                "log_fg": "#dbe7f4",
+                "tree_heading_bg": "#edf2f7",
+                "tree_heading_fg": "#334155",
+                "tab_active": "#ebf3f8",
+                "log_bg": "#0b1422",
+                "log_fg": "#d8e4f2",
             },
             "dark": {
-                "bg": "#11151a",
-                "panel": "#1a212b",
-                "surface": "#242d38",
-                "fg": "#e6edf3",
-                "muted": "#9aa6b2",
-                "border": "#323d4a",
-                "accent": "#4f8cff",
-                "accent_hover": "#6aa0ff",
-                "accent_fg": "#ffffff",
-                "text_bg": "#1c232d",
-                "text_fg": "#e6edf3",
-                "tree_bg": "#171e27",
-                "tree_fg": "#e6edf3",
-                "tree_sel_bg": "#4f8cff",
-                "tree_sel_fg": "#ffffff",
-                "tree_heading_bg": "#242d38",
-                "tree_heading_fg": "#dbe5ee",
-                "log_bg": "#121923",
-                "log_fg": "#d7e3ef",
+                "bg": "#0d141c",
+                "panel": "#101b27",
+                "surface": "#162433",
+                "fg": "#e7eff7",
+                "muted": "#9aaec2",
+                "border": "#2a3a4c",
+                "panel_border": "#223447",
+                "input_border": "#355066",
+                "accent": "#22d3ee",
+                "accent_hover": "#0bbcd6",
+                "accent_fg": "#06212a",
+                "danger": "#f97316",
+                "danger_hover": "#ea580c",
+                "text_bg": "#122131",
+                "text_fg": "#e6eef6",
+                "tree_bg": "#112131",
+                "tree_fg": "#e6eef6",
+                "tree_sel_bg": "#22d3ee",
+                "tree_sel_fg": "#06212a",
+                "tree_heading_bg": "#1b2c3d",
+                "tree_heading_fg": "#cedceb",
+                "tab_active": "#193144",
+                "log_bg": "#0a121d",
+                "log_fg": "#d4e1ef",
             },
         }
         palette = palettes["dark" if mode == "dark" else "light"]
@@ -363,120 +398,187 @@ class DownloaderUI:
 
         # Base widgets.
         self.root.configure(bg=flat_bg)
-        self.style.configure("Card.TFrame", background=flat_bg)
-        self.style.configure("TFrame", background=flat_bg)
-        self.style.configure("TLabel", background=flat_bg, foreground=palette["fg"])
-        self.style.configure("Hint.TLabel", background=flat_bg, foreground=palette["muted"])
+        self.style.configure(
+            "Card.TFrame",
+            background=palette["panel"],
+            bordercolor=palette["panel_border"],
+            borderwidth=1,
+            relief="solid",
+            lightcolor=palette["panel_border"],
+            darkcolor=palette["panel_border"],
+        )
+        self.style.configure("TFrame", background=palette["panel"])
+        self.style.configure(
+            "TLabel",
+            background=palette["panel"],
+            foreground=palette["fg"],
+            font=(self._ui_font_family, 10),
+        )
+        self.style.configure(
+            "Title.TLabel",
+            background=palette["panel"],
+            foreground=palette["fg"],
+            font=(self._heading_font_family, 16, "bold"),
+        )
+        self.style.configure(
+            "Hint.TLabel",
+            background=palette["panel"],
+            foreground=palette["muted"],
+            font=(self._ui_font_family, 9),
+        )
+        self.style.configure(
+            "TPanedwindow",
+            background=palette["panel"],
+            sashrelief="flat",
+        )
+        self.style.configure(
+            "Sash",
+            background=palette["panel_border"],
+            sashthickness=7,
+            gripcount=0,
+        )
         self.style.configure(
             "Panel.TLabelframe",
-            background=flat_bg,
-            bordercolor=flat_bg,
-            borderwidth=0,
-            relief="flat",
-            lightcolor=flat_bg,
-            darkcolor=flat_bg,
+            background=palette["panel"],
+            bordercolor=palette["panel_border"],
+            borderwidth=1,
+            relief="solid",
+            lightcolor=palette["panel_border"],
+            darkcolor=palette["panel_border"],
         )
         self.style.configure(
             "TLabelframe",
-            background=flat_bg,
-            bordercolor=flat_bg,
-            borderwidth=0,
-            relief="flat",
-            lightcolor=flat_bg,
-            darkcolor=flat_bg,
+            background=palette["panel"],
+            bordercolor=palette["panel_border"],
+            borderwidth=1,
+            relief="solid",
+            lightcolor=palette["panel_border"],
+            darkcolor=palette["panel_border"],
         )
         self.style.configure(
             "Panel.TLabelframe.Label",
-            background=flat_bg,
+            background=palette["panel"],
             foreground=palette["fg"],
-            font=("Segoe UI", 10, "bold"),
+            font=(self._heading_font_family, 10, "bold"),
         )
         self.style.configure(
             "TLabelframe.Label",
-            background=flat_bg,
+            background=palette["panel"],
             foreground=palette["fg"],
-            font=("Segoe UI", 10, "bold"),
+            font=(self._heading_font_family, 10, "bold"),
         )
 
         # Inputs and buttons.
         self.style.configure(
             "TEntry",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["surface"],
             foreground=palette["text_fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["input_border"],
+            lightcolor=palette["input_border"],
+            darkcolor=palette["input_border"],
+            insertcolor=palette["text_fg"],
         )
         self.style.configure(
             "TCombobox",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["surface"],
             foreground=palette["text_fg"],
-            background=flat_bg,
-            bordercolor=flat_bg,
+            background=palette["surface"],
+            bordercolor=palette["input_border"],
+            lightcolor=palette["input_border"],
+            darkcolor=palette["input_border"],
             arrowcolor=palette["fg"],
         )
         self.style.map(
             "TCombobox",
-            fieldbackground=[("readonly", flat_bg)],
+            fieldbackground=[("readonly", palette["surface"])],
             foreground=[("readonly", palette["text_fg"])],
+            bordercolor=[("focus", palette["accent"])],
         )
         self.style.configure(
             "TSpinbox",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["surface"],
             foreground=palette["text_fg"],
-            background=flat_bg,
-            bordercolor=flat_bg,
+            background=palette["surface"],
+            bordercolor=palette["input_border"],
+            lightcolor=palette["input_border"],
+            darkcolor=palette["input_border"],
             arrowcolor=palette["fg"],
         )
         self.style.configure(
             "TButton",
-            background=flat_bg,
+            background=palette["panel"],
             foreground=palette["fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["input_border"],
+            lightcolor=palette["input_border"],
+            darkcolor=palette["input_border"],
+            relief="flat",
+            padding=(10, 4),
             focusthickness=1,
             focuscolor=palette["accent"],
         )
         self.style.map(
             "TButton",
-            background=[("active", flat_bg)],
+            background=[("active", palette["surface"])],
             foreground=[("disabled", palette["muted"])],
+            bordercolor=[("focus", palette["accent"])],
         )
         self.style.configure(
             "Primary.TButton",
             background=palette["accent"],
             foreground=palette["accent_fg"],
             bordercolor=palette["accent"],
-            padding=(8, 3),
+            lightcolor=palette["accent"],
+            darkcolor=palette["accent"],
+            padding=(12, 5),
         )
         self.style.map(
             "Primary.TButton",
             background=[("active", palette["accent_hover"]), ("disabled", palette["border"])],
             foreground=[("disabled", palette["muted"])],
         )
-        self.style.configure("Slim.TButton", padding=(6, 2))
-        self.style.configure("TCheckbutton", background=flat_bg, foreground=palette["fg"])
+        self.style.configure(
+            "Danger.TButton",
+            background=palette["danger"],
+            foreground=palette["accent_fg"],
+            bordercolor=palette["danger"],
+            lightcolor=palette["danger"],
+            darkcolor=palette["danger"],
+            padding=(8, 4),
+            font=(self._heading_font_family, 9, "bold"),
+        )
+        self.style.map(
+            "Danger.TButton",
+            background=[("active", palette["danger_hover"]), ("disabled", palette["border"])],
+            foreground=[("disabled", palette["muted"])],
+        )
+        self.style.configure("Slim.TButton", padding=(8, 4), font=(self._ui_font_family, 9))
+        self.style.configure("TCheckbutton", background=palette["panel"], foreground=palette["fg"])
 
         # Notebook and tables.
-        self.style.configure("TNotebook", background=flat_bg, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        self.style.configure("TNotebook", background=palette["panel"], borderwidth=0, tabmargins=(2, 0, 0, 0))
         self.style.configure(
             "TNotebook.Tab",
-            background=flat_bg,
-            foreground=palette["fg"],
-            bordercolor=flat_bg,
-            padding=(10, 5),
+            background=palette["panel"],
+            foreground=palette["muted"],
+            bordercolor=palette["panel"],
+            padding=(14, 8),
+            font=(self._ui_font_family, 9, "bold"),
         )
         self.style.map(
             "TNotebook.Tab",
-            background=[("selected", palette["accent"]), ("active", flat_bg)],
-            foreground=[("selected", palette["accent_fg"])],
+            background=[("selected", palette["accent"]), ("active", palette["tab_active"])],
+            foreground=[("selected", palette["accent_fg"]), ("active", palette["fg"])],
         )
         self.style.configure(
             "Treeview",
-            background=flat_bg,
+            background=palette["tree_bg"],
             foreground=palette["tree_fg"],
-            fieldbackground=flat_bg,
-            bordercolor=flat_bg,
-            borderwidth=0,
+            fieldbackground=palette["tree_bg"],
+            bordercolor=palette["panel_border"],
+            borderwidth=1,
             relief="flat",
-            rowheight=22,
+            rowheight=24,
+            font=(self._ui_font_family, 9),
         )
         self.style.map(
             "Treeview",
@@ -485,18 +587,18 @@ class DownloaderUI:
         )
         self.style.configure(
             "Treeview.Heading",
-            background=flat_bg,
+            background=palette["tree_heading_bg"],
             foreground=palette["tree_heading_fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["panel_border"],
             relief="flat",
-            font=("Segoe UI Semibold", 9),
+            font=(self._heading_font_family, 9, "bold"),
         )
-        self.style.map("Treeview.Heading", background=[("active", flat_bg)])
+        self.style.map("Treeview.Heading", background=[("active", palette["tab_active"])])
         self.style.configure(
             "Accent.Horizontal.TProgressbar",
-            troughcolor=flat_bg,
+            troughcolor=palette["surface"],
             background=palette["accent"],
-            bordercolor=flat_bg,
+            bordercolor=palette["panel_border"],
             lightcolor=palette["accent"],
             darkcolor=palette["accent"],
         )
@@ -525,11 +627,11 @@ class DownloaderUI:
         self.style.configure(
             "Modern.Vertical.TScrollbar",
             background=palette["border"],
-            troughcolor=flat_bg,
-            bordercolor=flat_bg,
-            darkcolor=flat_bg,
-            lightcolor=flat_bg,
-            arrowcolor=flat_bg,
+            troughcolor=palette["panel"],
+            bordercolor=palette["panel"],
+            darkcolor=palette["panel"],
+            lightcolor=palette["panel"],
+            arrowcolor=palette["panel"],
             arrowsize=0,
             gripcount=0,
             relief="flat",
@@ -538,11 +640,11 @@ class DownloaderUI:
         self.style.configure(
             "Modern.Horizontal.TScrollbar",
             background=palette["border"],
-            troughcolor=flat_bg,
-            bordercolor=flat_bg,
-            darkcolor=flat_bg,
-            lightcolor=flat_bg,
-            arrowcolor=flat_bg,
+            troughcolor=palette["panel"],
+            bordercolor=palette["panel"],
+            darkcolor=palette["panel"],
+            lightcolor=palette["panel"],
+            arrowcolor=palette["panel"],
             arrowsize=0,
             gripcount=0,
             relief="flat",
@@ -558,25 +660,33 @@ class DownloaderUI:
         )
 
         # Text widgets (tk.Text via ScrolledText).
-        for text_widget in (
-            getattr(self, "log_text", None),
-            getattr(self, "json_text", None),
-            self._popup_log_text,
-        ):
-            if text_widget is not None and text_widget.winfo_exists():
-                text_widget.configure(
-                    background=flat_bg,
-                    foreground=palette["text_fg"],
-                    insertbackground=palette["text_fg"],
+        json_widget = getattr(self, "json_text", None)
+        if json_widget is not None and json_widget.winfo_exists():
+            json_widget.configure(
+                background=palette["text_bg"],
+                foreground=palette["text_fg"],
+                insertbackground=palette["text_fg"],
+                selectbackground=palette["accent"],
+                selectforeground=palette["accent_fg"],
+                borderwidth=0,
+                highlightthickness=0,
+                highlightbackground=palette["text_bg"],
+            )
+        for log_widget in (getattr(self, "log_text", None), self._popup_log_text):
+            if log_widget is not None and log_widget.winfo_exists():
+                log_widget.configure(
+                    background=palette["log_bg"],
+                    foreground=palette["log_fg"],
+                    insertbackground=palette["log_fg"],
                     selectbackground=palette["accent"],
                     selectforeground=palette["accent_fg"],
                     borderwidth=0,
                     highlightthickness=0,
-                    highlightbackground=flat_bg,
+                    highlightbackground=palette["log_bg"],
                 )
 
         # Combobox dropdown list colors.
-        self.root.option_add("*TCombobox*Listbox.background", flat_bg)
+        self.root.option_add("*TCombobox*Listbox.background", palette["surface"])
         self.root.option_add("*TCombobox*Listbox.foreground", palette["text_fg"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", palette["accent"])
         self.root.option_add("*TCombobox*Listbox.selectForeground", palette["accent_fg"])
@@ -585,7 +695,7 @@ class DownloaderUI:
         if hasattr(self, "_menus"):
             for menu in self._menus:
                 menu.configure(
-                    background=flat_bg,
+                    background=palette["panel"],
                     foreground=palette["fg"],
                     activebackground=palette["accent"],
                     activeforeground=palette["accent_fg"],
@@ -611,12 +721,22 @@ class DownloaderUI:
                 widget.tag_configure(tag_name, foreground=color)
 
     def _build_layout(self) -> None:
-        self.root.configure(bg="#e9edf5")
-        main = ttk.Frame(self.root, style="Card.TFrame", padding=8)
+        self.root.configure(bg=self._current_palette.get("bg", "#e8edf2"))
+        main = ttk.Frame(self.root, style="Card.TFrame", padding=10)
         main.pack(fill=tk.BOTH, expand=True)
 
-        control_box = ttk.Frame(main, style="Card.TFrame", padding=8)
-        control_box.grid(row=0, column=0, sticky="ew")
+        header_bar = ttk.Frame(main, style="Card.TFrame", padding=(10, 6))
+        header_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        header_bar.columnconfigure(1, weight=1)
+        ttk.Label(header_bar, text="MC-WS-DL-T", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header_bar,
+            text="Queue-first manga downloader and CBZ packager",
+            style="Hint.TLabel",
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+        control_box = ttk.Frame(main, style="Card.TFrame", padding=10)
+        control_box.grid(row=1, column=0, sticky="ew")
         control_box.columnconfigure(1, weight=1)
         control_box.columnconfigure(2, weight=0)
 
@@ -720,7 +840,7 @@ class DownloaderUI:
         self.save_json_button.pack(side=tk.LEFT)
 
         content_pane = ttk.Panedwindow(main, orient=tk.VERTICAL)
-        content_pane.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        content_pane.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
 
         result_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
         logs_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
@@ -736,7 +856,7 @@ class DownloaderUI:
         self.json_text = tk.Text(
             self.json_tab,
             wrap=tk.NONE,
-            font=("Consolas", 10),
+            font=(self._mono_font_family, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -850,7 +970,7 @@ class DownloaderUI:
             text="Cancel",
             command=self._cancel_queue,
             state=tk.DISABLED,
-            style="Slim.TButton",
+            style="Danger.TButton",
         )
         self.cancel_queue_button.grid(row=0, column=3, padx=(0, 8))
 
@@ -941,7 +1061,7 @@ class DownloaderUI:
         self.log_text = tk.Text(
             logs_body,
             wrap=tk.WORD,
-            font=("Consolas", 10),
+            font=(self._mono_font_family, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -956,8 +1076,8 @@ class DownloaderUI:
         self.log_text.grid(row=0, column=0, sticky="nsew")
         self.log_scroll_y.grid(row=0, column=1, sticky="ns")
 
-        progress_footer = ttk.Frame(main, style="Card.TFrame", padding=(4, 2))
-        progress_footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(6, 0))
+        progress_footer = ttk.Frame(main, style="Card.TFrame", padding=(6, 4))
+        progress_footer.grid(row=3, column=0, sticky="ew", padx=4, pady=(6, 0))
         progress_footer.columnconfigure(1, weight=1)
         progress_footer.columnconfigure(3, weight=1)
 
@@ -989,13 +1109,13 @@ class DownloaderUI:
         )
 
         footer = ttk.Frame(main, style="Card.TFrame")
-        footer.grid(row=3, column=0, sticky="ew", padx=4, pady=(4, 0))
+        footer.grid(row=4, column=0, sticky="ew", padx=4, pady=(4, 0))
         footer.columnconfigure(0, weight=1)
         ttk.Label(footer, textvariable=self.summary_var, style="Hint.TLabel", anchor=tk.W).grid(row=0, column=0, sticky="w")
         ttk.Label(footer, textvariable=self.status_var, style="Hint.TLabel", anchor=tk.E).grid(row=0, column=1, sticky="e")
 
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(1, weight=1)
+        main.rowconfigure(2, weight=1)
         self._refresh_library_combo()
         self._toggle_debug_tools()
 
@@ -1074,7 +1194,7 @@ class DownloaderUI:
         self._popup_log_text = tk.Text(
             popup_frame,
             wrap=tk.WORD,
-            font=("Consolas", 10),
+            font=(self._mono_font_family, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -1757,6 +1877,17 @@ class DownloaderUI:
                         self._set_chapter_progress(percent=20.0, title=chapter_title or "Chapter")
                         self._set_overall_progress(completed=max(index - 1, 0), total=total or self._batch_total)
                         self.status_var.set(f"Chapter {index}/{total}: {chapter_title}")
+                    elif progress_event == "chapter_image_progress":
+                        image_completed = int(payload.get("image_completed", 0))
+                        image_total = int(payload.get("image_total", 0))
+                        if image_total > 0:
+                            ratio = min(1.0, max(0.0, image_completed / image_total))
+                            chapter_percent = 20.0 + (ratio * 70.0)
+                            chapter_label = chapter_title or "Downloading chapter"
+                            self._set_chapter_progress(
+                                percent=chapter_percent,
+                                title=f"{chapter_label} [{image_completed}/{image_total}]",
+                            )
                     elif progress_event == "chapter_retry":
                         self._set_chapter_progress(percent=45.0, title=chapter_title or "Retrying chapter")
                         next_attempt = int(payload.get("next_attempt", 0))

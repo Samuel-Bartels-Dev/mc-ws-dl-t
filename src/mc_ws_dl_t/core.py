@@ -15,6 +15,7 @@ from .fetcher import FetchError, fetch_page
 from .history import is_chapter_downloaded, load_history, mark_chapter_downloaded, save_history
 from .parsers import resolve_parser_for_url
 from .parsers import mangatown
+from .parsers import webtoons
 from .parsers import parse_for_url
 
 
@@ -38,6 +39,8 @@ class DownloadOptions:
     output: Path | None = None
     # Optional image download base folder.
     image_download_dir: Path | None = None
+    # Optional callback for per-image progress updates: (completed, total).
+    image_progress_callback: Callable[[int, int], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +109,7 @@ def download_images(
     config: ScraperConfig,
     logger: logging.Logger,
     referer: str | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     # Downloads image URLs with retries and writes a deterministic numbered sequence.
     output_dir = _resolve_path(output_dir)
@@ -153,6 +157,11 @@ def download_images(
                 # Keep the run going even if a few image URLs fail.
                 failures.append({"url": image_url, "error": str(exc)})
                 logger.warning("Failed image download: %s | %s", image_url, exc)
+            if progress_callback:
+                try:
+                    progress_callback(index, total)
+                except Exception as exc:
+                    logger.debug("Image progress callback failed: %s", exc)
     finally:
         session.close()
 
@@ -179,6 +188,7 @@ def download_images_from_payload(
     output_base_dir: Path,
     config: ScraperConfig,
     logger: logging.Logger,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     output_base_dir = _resolve_path(output_base_dir)
     output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +203,7 @@ def download_images_from_payload(
         config=config,
         logger=logger,
         referer=source_url,
+        progress_callback=progress_callback,
     )
 
 
@@ -203,10 +214,10 @@ def discover_series(
     prefer_dynamic: bool = False,
     browser: str = "chrome",
 ) -> SeriesInfo:
-    # Series discovery currently supports Mangatown's mobile site layout.
+    # Series discovery supports known list-page formats from selected parser plugins.
     parser_plugin = resolve_parser_for_url(series_url)
-    if not parser_plugin or parser_plugin.name != "mangatown":
-        raise RuntimeError("Series discovery is currently supported for m.mangatown.com URLs.")
+    if not parser_plugin or parser_plugin.name not in {"mangatown", "webtoons"}:
+        raise RuntimeError("Series discovery is currently supported for m.mangatown.com and webtoons.com URLs.")
 
     try:
         html = fetch_page(
@@ -219,24 +230,45 @@ def discover_series(
     except FetchError as exc:
         raise RuntimeError(f"Failed to fetch series page: {exc}") from exc
 
-    chapters = tuple(
-        SeriesChapter(
-            title=chapter.title,
-            url=chapter.url,
-            release=chapter.release,
-            chapter_key=chapter.chapter_key,
+    raw_chapters: tuple[SeriesChapter, ...]
+    if parser_plugin.name == "mangatown":
+        raw_chapters = tuple(
+            SeriesChapter(
+                title=chapter.title,
+                url=chapter.url,
+                release=chapter.release,
+                chapter_key=chapter.chapter_key,
+            )
+            for chapter in mangatown.parse_series_chapters(html, base_url=series_url)
         )
-        for chapter in mangatown.parse_series_chapters(html, base_url=series_url)
-    )
+        title = mangatown.extract_series_title(html)
+        cover_url = mangatown.extract_series_cover_url(html, base_url=series_url)
+    else:
+        raw_chapters = tuple(
+            SeriesChapter(
+                title=chapter.title,
+                url=chapter.url,
+                release=chapter.release,
+                chapter_key=chapter.chapter_key,
+            )
+            for chapter in webtoons.fetch_series_chapters(
+                series_url=series_url,
+                config=config,
+                logger=logger,
+                first_html=html,
+            )
+        )
+        title = webtoons.extract_series_title(html)
+        cover_url = webtoons.extract_series_cover_url(html, base_url=series_url)
+
+    chapters = raw_chapters
     if not chapters:
         raise RuntimeError("No chapters found on the series page.")
 
-    title = mangatown.extract_series_title(html)
-    cover_url = mangatown.extract_series_cover_url(html, base_url=series_url)
     return SeriesInfo(
         title=title,
         url=series_url,
-        parser="mangatown",
+        parser=parser_plugin.name,
         cover_url=cover_url,
         chapters=chapters,
     )
@@ -416,6 +448,8 @@ def download_selected_chapters_as_cbz(
                 break
 
             try:
+                # Prior cleanup may remove the temp root when it becomes empty.
+                chapters_dir.mkdir(parents=True, exist_ok=True)
                 chapter_temp_dir = Path(
                     tempfile.mkdtemp(
                         prefix="chapter_",
@@ -429,8 +463,17 @@ def download_selected_chapters_as_cbz(
                     timeout_seconds=config.timeout_seconds,
                     wait_seconds=config.wait_seconds,
                     retries=config.retries,
-                    force_parser="mangatown",
+                    force_parser=series_info.parser,
                     image_download_dir=chapter_temp_dir,
+                    image_progress_callback=lambda completed, image_total: emit_progress(
+                        "chapter_image_progress",
+                        index=index,
+                        total=total_chapters,
+                        title=chapter.title,
+                        url=chapter.url,
+                        image_completed=completed,
+                        image_total=image_total,
+                    ),
                     output=None,
                 )
                 payload = run_download(options, logger=logger)
@@ -609,6 +652,10 @@ def run_download(options: DownloadOptions, logger: logging.Logger) -> dict[str, 
         raise RuntimeError(
             "Series URL detected. Use 'Load Chapters' and 'Start Queue', or paste a chapter URL like /c###/."
         )
+    if parser_name == "webtoons" and webtoons.is_series_url(options.url):
+        raise RuntimeError(
+            "Series URL detected. Use 'Load Chapters' and 'Start Queue', or paste a Webtoons episode URL."
+        )
 
     payload: dict[str, Any] = {
         "source_url": options.url,
@@ -633,6 +680,7 @@ def run_download(options: DownloadOptions, logger: logging.Logger) -> dict[str, 
             output_base_dir=options.image_download_dir,
             config=config,
             logger=logger,
+            progress_callback=options.image_progress_callback,
         )
 
     if options.output:

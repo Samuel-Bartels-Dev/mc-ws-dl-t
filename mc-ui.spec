@@ -1,11 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
+
+datas = []
+datas += collect_data_files('customtkinter')
 
 
 a = Analysis(
     ['scripts\\ui_entrypoint.py'],
     pathex=['.\\src'],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -7,8 +7,10 @@ import time
 import traceback
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from typing import Any, cast
+
+import customtkinter as ctk  # type: ignore[import-untyped]
 
 from .config import ScraperConfig
 from .core import (
@@ -41,11 +43,38 @@ class QueueLogHandler(logging.Handler):
 
 
 class DownloaderUI:
+    NERD_ICONS = {
+        "app": "\uf02d",
+        "download": "\uf019",
+        "queue": "\uf0ae",
+        "pause": "\uf04c",
+        "resume": "\uf04b",
+        "cancel": "\uf00d",
+        "retry": "\uf01e",
+        "folder": "\uf07c",
+        "logs": "\uf15c",
+        "clear": "\uf1f8",
+        "debug": "\uf188",
+        "source": "\uf0c1",
+        "settings": "\uf013",
+        "workspace": "\uf0e8",
+        "chapters": "\uf02d",
+        "terminal": "\uf120",
+        "json": "\ue60b",
+        "images": "\uf03e",
+        "filter": "\uf0b0",
+        "select": "\uf046",
+        "run": "\uf0e7",
+        "copy": "\uf0c5",
+        "save": "\uf0c7",
+        "browse": "\uf07b",
+    }
+
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("MC-WS-DL-T | Manga/Comic Downloader")
-        self.root.geometry("1180x720")
-        self.root.minsize(980, 680)
+        self.root.geometry("1240x780")
+        self.root.minsize(1040, 700)
 
         self.event_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         self.current_payload: dict[str, object] | None = None
@@ -90,18 +119,49 @@ class DownloaderUI:
         self._json_tab_visible = True
         self._url_tab_visible = True
 
+        self.ui_font_family = self._choose_font_family(
+            (
+                "JetBrainsMono NFP",
+                "JetBrainsMono NF",
+                "JetBrainsMonoNL NFP",
+                "MesloLGS Nerd Font Propo",
+                "MesloLGS Nerd Font",
+            ),
+            "Segoe UI",
+        )
+        self.mono_font_family = self._choose_font_family(
+            (
+                "JetBrainsMono NFM",
+                "JetBrainsMonoNL NFM",
+                "JetBrainsMono NF",
+                "MesloLGS Nerd Font Mono",
+                "Cascadia Mono",
+            ),
+            "Consolas",
+        )
+
         self.log_file_var.set(str(self._build_default_log_file_path()))
         self._load_library_settings()
         self._ensure_default_library()
 
         self._configure_style()
-        self._build_layout()
-        self._build_menu()
+        self._build_modern_layout()
         self._apply_theme(self.theme_var.get())
         self._update_queue_control_states()
 
         # Poll queued events so worker thread updates are applied on the UI thread.
         self.root.after(100, self._process_events)
+
+    def _choose_font_family(self, preferred: tuple[str, ...], fallback: str) -> str:
+        try:
+            available = {str(family) for family in tkfont.families(self.root)}
+        except tk.TclError:
+            return fallback
+
+        for family in preferred:
+            if family in available:
+                return family
+        return fallback
 
     def _build_default_log_file_path(self) -> Path:
         # Always create run logs in ./logs so users do not have to configure file paths.
@@ -286,140 +346,187 @@ class DownloaderUI:
         self.root.config(menu=menu_bar)
 
     def _configure_style(self) -> None:
+        ui_font = self.ui_font_family
         self.style = ttk.Style(self.root)
         self.style.theme_use("clam")
-        self.style.configure("Title.TLabel", font=("Segoe UI Semibold", 14))
-        self.style.configure("Primary.TButton", padding=(8, 3))
-        self.style.configure("Slim.TButton", padding=(6, 2))
+        ctk.ThemeManager.theme["CTkFont"]["family"] = ui_font
+        self.root.option_add("*Font", f"{{{ui_font}}} 10")
+        self.style.configure("AppTitle.TLabel", font=(ui_font, 22, "bold"))
+        self.style.configure("Title.TLabel", font=(ui_font, 13, "bold"))
+        self.style.configure("Section.TLabel", font=(ui_font, 10, "bold"))
+        self.style.configure("Meta.TLabel", font=(ui_font, 9))
+        self.style.configure("Primary.TButton", padding=(14, 7))
+        self.style.configure("Secondary.TButton", padding=(10, 6))
+        self.style.configure("Slim.TButton", padding=(8, 4))
 
     def _on_theme_change(self) -> None:
         self._apply_theme(self.theme_var.get())
 
     def _apply_theme(self, mode: str) -> None:
+        ctk.set_appearance_mode("dark" if mode == "dark" else "light")
         palettes: dict[str, dict[str, str]] = {
             "light": {
-                "bg": "#edf1f5",
-                "panel": "#f6f8fb",
+                "bg": "#f5f7fb",
+                "panel": "#e8edf3",
                 "surface": "#ffffff",
-                "fg": "#1f2a37",
-                "muted": "#5d6b7c",
-                "border": "#cfd8e3",
+                "surface_alt": "#f8fafc",
+                "input": "#ffffff",
+                "fg": "#1b2430",
+                "muted": "#667085",
+                "border": "#d5dde7",
                 "accent": "#2563eb",
-                "accent_hover": "#1f59d1",
+                "accent_hover": "#1d4ed8",
                 "accent_fg": "#ffffff",
-                "text_bg": "#f8fafc",
+                "success": "#15803d",
+                "warning": "#b45309",
+                "danger": "#b91c1c",
+                "text_bg": "#ffffff",
                 "text_fg": "#111827",
                 "tree_bg": "#ffffff",
                 "tree_fg": "#1f2937",
-                "tree_sel_bg": "#2563eb",
+                "tree_alt": "#f7fafc",
+                "tree_sel_bg": "#0f766e",
                 "tree_sel_fg": "#ffffff",
-                "tree_heading_bg": "#e7edf4",
+                "tree_heading_bg": "#eef3f7",
                 "tree_heading_fg": "#1f2937",
-                "log_bg": "#0f1724",
-                "log_fg": "#dbe7f4",
+                "log_bg": "#101820",
+                "log_fg": "#dbe7f1",
             },
             "dark": {
-                "bg": "#11151a",
-                "panel": "#1a212b",
-                "surface": "#242d38",
-                "fg": "#e6edf3",
-                "muted": "#9aa6b2",
-                "border": "#323d4a",
-                "accent": "#4f8cff",
-                "accent_hover": "#6aa0ff",
-                "accent_fg": "#ffffff",
-                "text_bg": "#1c232d",
-                "text_fg": "#e6edf3",
-                "tree_bg": "#171e27",
-                "tree_fg": "#e6edf3",
-                "tree_sel_bg": "#4f8cff",
+                "bg": "#101114",
+                "panel": "#14161a",
+                "surface": "#1a1c20",
+                "surface_alt": "#23262d",
+                "input": "#20232a",
+                "fg": "#f4f6f8",
+                "muted": "#a3aab6",
+                "border": "#333842",
+                "accent": "#60a5fa",
+                "accent_hover": "#7bbcff",
+                "accent_fg": "#07111e",
+                "success": "#86efac",
+                "warning": "#fbbf24",
+                "danger": "#fca5a5",
+                "text_bg": "#181a1f",
+                "text_fg": "#f2f4f7",
+                "tree_bg": "#181a1f",
+                "tree_fg": "#edf1f5",
+                "tree_alt": "#20232a",
+                "tree_sel_bg": "#2563eb",
                 "tree_sel_fg": "#ffffff",
-                "tree_heading_bg": "#242d38",
-                "tree_heading_fg": "#dbe5ee",
-                "log_bg": "#121923",
-                "log_fg": "#d7e3ef",
+                "tree_heading_bg": "#23262d",
+                "tree_heading_fg": "#e5e9ef",
+                "log_bg": "#101114",
+                "log_fg": "#dce3ec",
             },
         }
         palette = palettes["dark" if mode == "dark" else "light"]
         self._current_palette = palette
         flat_bg = palette["bg"]
+        surface = palette["surface"]
+        panel = palette["panel"]
 
         # Base widgets.
         self.root.configure(bg=flat_bg)
-        self.style.configure("Card.TFrame", background=flat_bg)
         self.style.configure("TFrame", background=flat_bg)
+        self.style.configure("App.TFrame", background=flat_bg)
+        self.style.configure("Card.TFrame", background=surface, borderwidth=1, relief="solid")
+        self.style.configure("Surface.TFrame", background=surface)
+        self.style.configure("Toolbar.TFrame", background=palette["surface_alt"])
+        self.style.configure("Status.TFrame", background=panel)
         self.style.configure("TLabel", background=flat_bg, foreground=palette["fg"])
+        self.style.configure("AppTitle.TLabel", background=flat_bg, foreground=palette["fg"])
+        self.style.configure("Title.TLabel", background=surface, foreground=palette["fg"])
+        self.style.configure("Section.TLabel", background=surface, foreground=palette["fg"])
         self.style.configure("Hint.TLabel", background=flat_bg, foreground=palette["muted"])
+        self.style.configure("Surface.TLabel", background=surface, foreground=palette["fg"])
+        self.style.configure("SurfaceHint.TLabel", background=surface, foreground=palette["muted"])
+        self.style.configure("Toolbar.TLabel", background=palette["surface_alt"], foreground=palette["fg"])
+        self.style.configure("ToolbarHint.TLabel", background=palette["surface_alt"], foreground=palette["muted"])
+        self.style.configure("Status.TLabel", background=panel, foreground=palette["muted"])
         self.style.configure(
             "Panel.TLabelframe",
-            background=flat_bg,
-            bordercolor=flat_bg,
-            borderwidth=0,
+            background=surface,
+            bordercolor=palette["border"],
+            borderwidth=1,
             relief="flat",
-            lightcolor=flat_bg,
-            darkcolor=flat_bg,
+            lightcolor=surface,
+            darkcolor=surface,
         )
         self.style.configure(
             "TLabelframe",
-            background=flat_bg,
-            bordercolor=flat_bg,
-            borderwidth=0,
+            background=surface,
+            bordercolor=palette["border"],
+            borderwidth=1,
             relief="flat",
-            lightcolor=flat_bg,
-            darkcolor=flat_bg,
+            lightcolor=surface,
+            darkcolor=surface,
         )
         self.style.configure(
             "Panel.TLabelframe.Label",
-            background=flat_bg,
+            background=surface,
             foreground=palette["fg"],
-            font=("Segoe UI", 10, "bold"),
+            font=(self.ui_font_family, 10, "bold"),
         )
         self.style.configure(
             "TLabelframe.Label",
-            background=flat_bg,
+            background=surface,
             foreground=palette["fg"],
-            font=("Segoe UI", 10, "bold"),
+            font=(self.ui_font_family, 10, "bold"),
         )
 
         # Inputs and buttons.
         self.style.configure(
             "TEntry",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["input"],
             foreground=palette["text_fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["border"],
+            lightcolor=palette["border"],
+            darkcolor=palette["border"],
+            insertcolor=palette["text_fg"],
+            padding=(7, 5),
         )
         self.style.configure(
             "TCombobox",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["input"],
             foreground=palette["text_fg"],
-            background=flat_bg,
-            bordercolor=flat_bg,
+            background=palette["input"],
+            bordercolor=palette["border"],
+            lightcolor=palette["border"],
+            darkcolor=palette["border"],
             arrowcolor=palette["fg"],
+            padding=(7, 4),
         )
         self.style.map(
             "TCombobox",
-            fieldbackground=[("readonly", flat_bg)],
+            fieldbackground=[("readonly", palette["input"])],
             foreground=[("readonly", palette["text_fg"])],
         )
         self.style.configure(
             "TSpinbox",
-            fieldbackground=flat_bg,
+            fieldbackground=palette["input"],
             foreground=palette["text_fg"],
-            background=flat_bg,
-            bordercolor=flat_bg,
+            background=palette["input"],
+            bordercolor=palette["border"],
+            lightcolor=palette["border"],
+            darkcolor=palette["border"],
             arrowcolor=palette["fg"],
+            padding=(5, 4),
         )
         self.style.configure(
             "TButton",
-            background=flat_bg,
+            background=surface,
             foreground=palette["fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["border"],
+            lightcolor=palette["border"],
+            darkcolor=palette["border"],
             focusthickness=1,
             focuscolor=palette["accent"],
+            padding=(10, 6),
         )
         self.style.map(
             "TButton",
-            background=[("active", flat_bg)],
+            background=[("active", palette["surface_alt"]), ("pressed", panel)],
             foreground=[("disabled", palette["muted"])],
         )
         self.style.configure(
@@ -427,39 +534,57 @@ class DownloaderUI:
             background=palette["accent"],
             foreground=palette["accent_fg"],
             bordercolor=palette["accent"],
-            padding=(8, 3),
+            lightcolor=palette["accent"],
+            darkcolor=palette["accent"],
+            padding=(14, 7),
         )
         self.style.map(
             "Primary.TButton",
             background=[("active", palette["accent_hover"]), ("disabled", palette["border"])],
             foreground=[("disabled", palette["muted"])],
         )
-        self.style.configure("Slim.TButton", padding=(6, 2))
-        self.style.configure("TCheckbutton", background=flat_bg, foreground=palette["fg"])
+        self.style.configure(
+            "Secondary.TButton",
+            background=palette["surface_alt"],
+            foreground=palette["fg"],
+            bordercolor=palette["border"],
+            padding=(10, 6),
+        )
+        self.style.map("Secondary.TButton", background=[("active", panel), ("pressed", panel)])
+        self.style.configure("Slim.TButton", padding=(8, 4))
+        self.style.configure("TCheckbutton", background=surface, foreground=palette["fg"])
+        self.style.map(
+            "TCheckbutton",
+            background=[("active", surface)],
+            foreground=[("disabled", palette["muted"])],
+        )
 
         # Notebook and tables.
-        self.style.configure("TNotebook", background=flat_bg, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        self.style.configure("TNotebook", background=surface, borderwidth=0, tabmargins=(0, 0, 0, 0))
         self.style.configure(
             "TNotebook.Tab",
-            background=flat_bg,
+            background=palette["surface_alt"],
             foreground=palette["fg"],
-            bordercolor=flat_bg,
-            padding=(10, 5),
+            bordercolor=surface,
+            lightcolor=surface,
+            darkcolor=surface,
+            padding=(14, 8),
         )
         self.style.map(
             "TNotebook.Tab",
-            background=[("selected", palette["accent"]), ("active", flat_bg)],
-            foreground=[("selected", palette["accent_fg"])],
+            background=[("selected", surface), ("active", panel)],
+            foreground=[("selected", palette["accent"]), ("disabled", palette["muted"])],
         )
         self.style.configure(
             "Treeview",
-            background=flat_bg,
+            background=palette["tree_bg"],
             foreground=palette["tree_fg"],
-            fieldbackground=flat_bg,
-            bordercolor=flat_bg,
+            fieldbackground=palette["tree_bg"],
+            bordercolor=palette["border"],
             borderwidth=0,
             relief="flat",
-            rowheight=22,
+            rowheight=28,
+            font=(self.ui_font_family, 10),
         )
         self.style.map(
             "Treeview",
@@ -468,13 +593,14 @@ class DownloaderUI:
         )
         self.style.configure(
             "Treeview.Heading",
-            background=flat_bg,
+            background=palette["tree_heading_bg"],
             foreground=palette["tree_heading_fg"],
-            bordercolor=flat_bg,
+            bordercolor=palette["border"],
             relief="flat",
-            font=("Segoe UI Semibold", 9),
+            font=(self.ui_font_family, 9, "bold"),
+            padding=(8, 6),
         )
-        self.style.map("Treeview.Heading", background=[("active", flat_bg)])
+        self.style.map("Treeview.Heading", background=[("active", panel)])
 
         # Modern slim scrollbars (no arrows), closer to web app visuals.
         vertical_scroll_layout: list[tuple[str, Any]] = [
@@ -500,11 +626,11 @@ class DownloaderUI:
         self.style.configure(
             "Modern.Vertical.TScrollbar",
             background=palette["border"],
-            troughcolor=flat_bg,
-            bordercolor=flat_bg,
-            darkcolor=flat_bg,
-            lightcolor=flat_bg,
-            arrowcolor=flat_bg,
+            troughcolor=surface,
+            bordercolor=surface,
+            darkcolor=surface,
+            lightcolor=surface,
+            arrowcolor=surface,
             arrowsize=0,
             gripcount=0,
             relief="flat",
@@ -513,11 +639,11 @@ class DownloaderUI:
         self.style.configure(
             "Modern.Horizontal.TScrollbar",
             background=palette["border"],
-            troughcolor=flat_bg,
-            bordercolor=flat_bg,
-            darkcolor=flat_bg,
-            lightcolor=flat_bg,
-            arrowcolor=flat_bg,
+            troughcolor=surface,
+            bordercolor=surface,
+            darkcolor=surface,
+            lightcolor=surface,
+            arrowcolor=surface,
             arrowsize=0,
             gripcount=0,
             relief="flat",
@@ -532,26 +658,31 @@ class DownloaderUI:
             background=[("active", palette["accent"]), ("pressed", palette["accent"])],
         )
 
-        # Text widgets (tk.Text via ScrolledText).
-        for text_widget in (
-            getattr(self, "log_text", None),
-            getattr(self, "json_text", None),
-            self._popup_log_text,
-        ):
+        text_widgets = (
+            (getattr(self, "json_text", None), palette["text_bg"], palette["text_fg"]),
+            (getattr(self, "log_text", None), palette["log_bg"], palette["log_fg"]),
+            (self._popup_log_text, palette["log_bg"], palette["log_fg"]),
+        )
+        for text_widget, bg, fg in text_widgets:
             if text_widget is not None and text_widget.winfo_exists():
                 text_widget.configure(
-                    background=flat_bg,
-                    foreground=palette["text_fg"],
-                    insertbackground=palette["text_fg"],
+                    background=bg,
+                    foreground=fg,
+                    insertbackground=fg,
                     selectbackground=palette["accent"],
                     selectforeground=palette["accent_fg"],
                     borderwidth=0,
                     highlightthickness=0,
-                    highlightbackground=flat_bg,
+                    highlightbackground=bg,
                 )
+        if hasattr(self, "chapter_table"):
+            self.chapter_table.tag_configure("downloaded", foreground=palette["success"])
+            self.chapter_table.tag_configure("pending", foreground=palette["tree_fg"])
+        if hasattr(self, "url_table"):
+            self.url_table.tag_configure("odd", background=palette["tree_alt"])
 
         # Combobox dropdown list colors.
-        self.root.option_add("*TCombobox*Listbox.background", flat_bg)
+        self.root.option_add("*TCombobox*Listbox.background", palette["input"])
         self.root.option_add("*TCombobox*Listbox.foreground", palette["text_fg"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", palette["accent"])
         self.root.option_add("*TCombobox*Listbox.selectForeground", palette["accent_fg"])
@@ -569,133 +700,789 @@ class DownloaderUI:
         if self._log_popup and self._log_popup.winfo_exists():
             self._log_popup.configure(bg=palette["bg"])
 
-    def _build_layout(self) -> None:
-        self.root.configure(bg="#e9edf5")
-        main = ttk.Frame(self.root, style="Card.TFrame", padding=8)
-        main.pack(fill=tk.BOTH, expand=True)
+    def _build_modern_layout(self) -> None:
+        icons = self.NERD_ICONS
+        ui_font = self.ui_font_family
+        mono_font = self.mono_font_family
+        action_font = (ui_font, 13, "bold")
+        compact_button_font = (ui_font, 12, "bold")
+        shell_bg = ("#f5f7fb", "#101114")
+        panel_bg = ("#ffffff", "#1a1c20")
+        panel_alt = ("#f8fafc", "#23262d")
+        sidebar_bg = ("#111827", "#111216")
+        sidebar_muted = ("#9ca3af", "#a3aab6")
+        border = ("#d7dee8", "#333842")
+        accent = ("#2563eb", "#60a5fa")
+        accent_hover = ("#1d4ed8", "#7bbcff")
+        accent_text = ("#ffffff", "#07111e")
+        text = ("#111827", "#f4f6f8")
+        muted = ("#667085", "#a3aab6")
 
-        control_box = ttk.Frame(main, style="Card.TFrame", padding=8)
-        control_box.grid(row=0, column=0, sticky="ew")
-        control_box.columnconfigure(1, weight=1)
-        control_box.columnconfigure(2, weight=0)
+        cast(Any, self.root).configure(fg_color=shell_bg)
 
-        ttk.Label(control_box, text="Series URL").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=2)
-        url_entry = ttk.Entry(control_box, textvariable=self.url_var)
-        url_entry.grid(row=0, column=1, sticky="ew", pady=2)
-        self.load_series_button = ttk.Button(
-            control_box,
-            text="Load",
+        app = ctk.CTkFrame(self.root, fg_color=shell_bg, corner_radius=0)
+        app.pack(fill=tk.BOTH, expand=True)
+        app.grid_columnconfigure(1, weight=1)
+        app.grid_rowconfigure(0, weight=1)
+
+        sidebar = ctk.CTkFrame(app, width=260, corner_radius=0, fg_color=sidebar_bg)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            sidebar,
+            text=f"{icons['app']}  MC-WS-DL-T",
+            font=(ui_font, 25, "bold"),
+            text_color="#f8fafc",
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=22, pady=(24, 2))
+        ctk.CTkLabel(
+            sidebar,
+            text=f"{icons['terminal']}  Download console",
+            font=(ui_font, 12),
+            text_color=sidebar_muted,
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=22, pady=(0, 28))
+
+        self.load_series_button = ctk.CTkButton(
+            sidebar,
+            text=f"{icons['download']}  Load Chapters",
             command=self._start_series_discovery,
-            style="Primary.TButton",
-            width=9,
+            height=42,
+            corner_radius=8,
+            fg_color=accent,
+            hover_color=accent_hover,
+            text_color=accent_text,
+            font=action_font,
         )
-        self.load_series_button.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=2)
+        self.load_series_button.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 10))
 
-        self.output_label = ttk.Label(control_box, text="Output JSON")
-        self.output_label.grid(row=4, column=0, sticky="w", padx=(0, 8), pady=2)
-        self.output_entry = ttk.Entry(control_box, textvariable=self.output_var)
-        self.output_entry.grid(row=4, column=1, sticky="ew", pady=2)
-        self.output_browse_button = ttk.Button(control_box, text="Browse", command=self._browse_output_file, style="Slim.TButton")
-        self.output_browse_button.grid(row=4, column=2, sticky="w", padx=(8, 0), pady=2)
+        self.download_selected_button = ctk.CTkButton(
+            sidebar,
+            text=f"{icons['queue']}  Start Queue",
+            command=self._start_download_selected_chapters,
+            height=42,
+            corner_radius=8,
+            fg_color=("#243042", "#20232a"),
+            hover_color=("#334155", "#303641"),
+            text_color="#f8fafc",
+            font=action_font,
+        )
+        self.download_selected_button.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
 
-        ttk.Label(control_box, text="Image folder").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=2)
-        self.image_dir_combo = ttk.Combobox(
-            control_box,
-            textvariable=self.image_dir_var,
+        queue_controls = ctk.CTkFrame(sidebar, fg_color="transparent")
+        queue_controls.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 18))
+        queue_controls.grid_columnconfigure((0, 1), weight=1)
+        self.pause_queue_button = ctk.CTkButton(
+            queue_controls,
+            text=f"{icons['pause']}  Pause",
+            command=self._pause_queue,
+            state=tk.DISABLED,
+            height=34,
+            corner_radius=8,
+            fg_color=("#2d3748", "#22262e"),
+            hover_color=("#46556c", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        )
+        self.pause_queue_button.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 8))
+        self.resume_queue_button = ctk.CTkButton(
+            queue_controls,
+            text=f"{icons['resume']}  Resume",
+            command=self._resume_queue,
+            state=tk.DISABLED,
+            height=34,
+            corner_radius=8,
+            fg_color=("#2d3748", "#22262e"),
+            hover_color=("#46556c", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        )
+        self.resume_queue_button.grid(row=0, column=1, sticky="ew", padx=(6, 0), pady=(0, 8))
+        self.cancel_queue_button = ctk.CTkButton(
+            queue_controls,
+            text=f"{icons['cancel']}  Cancel",
+            command=self._cancel_queue,
+            state=tk.DISABLED,
+            height=34,
+            corner_radius=8,
+            fg_color=("#7f1d1d", "#451a1a"),
+            hover_color=("#991b1b", "#5f1f1f"),
+            text_color="#fee2e2",
+            font=compact_button_font,
+        )
+        self.cancel_queue_button.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        self.retry_failed_button = ctk.CTkButton(
+            queue_controls,
+            text=f"{icons['retry']}  Retry Failed",
+            command=self._retry_failed_chapters,
+            state=tk.DISABLED,
+            height=34,
+            corner_radius=8,
+            fg_color=("#2d3748", "#22262e"),
+            hover_color=("#46556c", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        )
+        self.retry_failed_button.grid(row=1, column=1, sticky="ew", padx=(6, 0))
+
+        sidebar_section = ctk.CTkFrame(sidebar, fg_color=("#172033", "#191b21"), corner_radius=8)
+        sidebar_section.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 18))
+        sidebar_section.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            sidebar_section,
+            text=f"{icons['settings']}  Queue Settings",
+            text_color="#f8fafc",
+            font=action_font,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 6))
+        retry_row = ctk.CTkFrame(sidebar_section, fg_color="transparent")
+        retry_row.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 14))
+        retry_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(retry_row, text="Retry/chapter", text_color=sidebar_muted).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 10),
+        )
+        self.retry_spin = ctk.CTkEntry(
+            retry_row,
+            textvariable=self.retry_per_chapter_var,
+            width=58,
+            height=32,
+            corner_radius=8,
+            fg_color=("#0f172a", "#20232a"),
+            border_color=("#334155", "#3a404b"),
+            text_color="#f8fafc",
+        )
+        self.retry_spin.grid(row=0, column=1, sticky="e")
+
+        sidebar_tools = ctk.CTkFrame(sidebar, fg_color="transparent")
+        sidebar_tools.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 20))
+        sidebar_tools.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(
+            sidebar_tools,
+            text=f"{icons['folder']}  Open Library",
+            command=self._open_current_library_folder,
+            height=36,
+            corner_radius=8,
+            fg_color=("#1f2937", "#1d2027"),
+            hover_color=("#374151", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ctk.CTkButton(
+            sidebar_tools,
+            text=f"{icons['logs']}  Pop Out Logs",
+            command=self._open_log_popup,
+            height=36,
+            corner_radius=8,
+            fg_color=("#1f2937", "#1d2027"),
+            hover_color=("#374151", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        ctk.CTkButton(
+            sidebar_tools,
+            text=f"{icons['clear']}  Clear Logs",
+            command=self._clear_logs,
+            height=36,
+            corner_radius=8,
+            fg_color=("#1f2937", "#1d2027"),
+            hover_color=("#374151", "#303641"),
+            text_color="#e5edf6",
+            font=compact_button_font,
+        ).grid(row=2, column=0, sticky="ew")
+
+        sidebar.grid_rowconfigure(7, weight=1)
+        bottom_tools = ctk.CTkFrame(sidebar, fg_color="transparent")
+        bottom_tools.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 22))
+        bottom_tools.grid_columnconfigure(0, weight=1)
+        self.debug_switch = ctk.CTkSwitch(
+            bottom_tools,
+            text=f"{icons['debug']}  Debug tools",
+            variable=self.show_debug_var,
+            command=self._toggle_debug_tools,
+            progress_color=accent,
+            text_color="#e5edf6",
+            font=(ui_font, 12, "bold"),
+        )
+        self.debug_switch.grid(row=0, column=0, sticky="w", pady=(0, 12))
+        self.theme_segment = ctk.CTkSegmentedButton(
+            bottom_tools,
+            values=["light", "dark"],
+            variable=self.theme_var,
+            command=lambda _value: self._on_theme_change(),
+            height=34,
+            corner_radius=8,
+            selected_color=accent,
+            selected_hover_color=accent_hover,
+            unselected_color=("#1f2937", "#1d2027"),
+            unselected_hover_color=("#374151", "#303641"),
+            text_color=("#ffffff", "#ecfeff"),
+            font=compact_button_font,
+        )
+        self.theme_segment.grid(row=1, column=0, sticky="ew")
+
+        content = ctk.CTkFrame(app, fg_color=shell_bg, corner_radius=0)
+        content.grid(row=0, column=1, sticky="nsew", padx=18, pady=16)
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(2, weight=1)
+
+        header = ctk.CTkFrame(content, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            header,
+            text=f"{icons['app']}  Manga and comic downloader",
+            font=(ui_font, 25, "bold"),
+            text_color=text,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            header,
+            textvariable=self.status_var,
+            font=(ui_font, 12),
+            text_color=muted,
+            anchor="e",
+        ).grid(row=0, column=1, sticky="e", padx=(18, 0))
+        ctk.CTkLabel(
+            header,
+            textvariable=self.summary_var,
+            font=(ui_font, 12),
+            text_color=muted,
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+
+        source_card = ctk.CTkFrame(
+            content,
+            fg_color=panel_bg,
+            border_width=1,
+            border_color=border,
+            corner_radius=8,
+        )
+        source_card.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        source_card.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            source_card,
+            text=f"{icons['source']}  Source",
+            font=(ui_font, 15, "bold"),
+            text_color=text,
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=18, pady=(16, 10))
+        ctk.CTkLabel(source_card, text="Series URL", text_color=muted, anchor="w").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(18, 10),
+            pady=(0, 10),
+        )
+        ctk.CTkEntry(
+            source_card,
+            textvariable=self.url_var,
+            height=38,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            text_color=text,
+            font=(ui_font, 12),
+            placeholder_text="https://...",
+        ).grid(row=1, column=1, columnspan=3, sticky="ew", padx=(0, 18), pady=(0, 10))
+
+        ctk.CTkLabel(source_card, text="Library", text_color=muted, anchor="w").grid(
+            row=2,
+            column=0,
+            sticky="w",
+            padx=(18, 10),
+            pady=(0, 16),
+        )
+        self.image_dir_combo = ctk.CTkComboBox(
+            source_card,
+            variable=self.image_dir_var,
             values=self.library_locations,
-            state="normal",
+            height=38,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            button_color=panel_alt,
+            button_hover_color=("#e2e8f0", "#303641"),
+            dropdown_fg_color=panel_bg,
+            dropdown_hover_color=("#e2e8f0", "#343b46"),
+            text_color=text,
+            dropdown_text_color=text,
+            font=(ui_font, 12),
+            dropdown_font=(ui_font, 12),
+            command=lambda _choice: self._persist_current_library(),
         )
-        self.image_dir_combo.grid(row=1, column=1, sticky="ew", pady=2)
-        self.image_dir_combo.bind("<<ComboboxSelected>>", lambda _event: self._persist_current_library())
+        self.image_dir_combo.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=(0, 16))
         self.image_dir_combo.bind("<FocusOut>", lambda _event: self._persist_current_library())
         self.image_dir_combo.bind("<Return>", lambda _event: self._persist_current_library())
-        ttk.Button(control_box, text="Browse", command=self._browse_image_dir, style="Slim.TButton", width=9).grid(
-            row=1, column=2, sticky="w", padx=(8, 0), pady=2
-        )
+        ctk.CTkButton(
+            source_card,
+            text=f"{icons['browse']}  Browse",
+            command=self._browse_image_dir,
+            height=38,
+            width=104,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=2, column=2, sticky="ew", padx=(0, 10), pady=(0, 16))
+        ctk.CTkButton(
+            source_card,
+            text=f"{icons['folder']}  Open",
+            command=self._open_current_library_folder,
+            height=38,
+            width=86,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=2, column=3, sticky="ew", padx=(0, 18), pady=(0, 16))
 
-        settings_row = ttk.Frame(control_box)
-        settings_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(2, 2))
-        ttk.Label(settings_row, text="Parser").pack(side=tk.LEFT, padx=(0, 4))
-        self.parser_combo = ttk.Combobox(
-            settings_row,
-            textvariable=self.parser_var,
+        options_card = ctk.CTkFrame(
+            content,
+            fg_color=panel_bg,
+            border_width=1,
+            border_color=border,
+            corner_radius=8,
+        )
+        options_card.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        for column in (1, 3, 5, 7, 9):
+            options_card.grid_columnconfigure(column, weight=1)
+
+        ctk.CTkLabel(options_card, text="Parser", text_color=muted).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(18, 8),
+            pady=(14, 14),
+        )
+        self.parser_combo = ctk.CTkComboBox(
+            options_card,
+            variable=self.parser_var,
             values=get_available_parser_names(),
             state="readonly",
-            width=11,
+            height=34,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            button_color=panel_alt,
+            button_hover_color=("#e2e8f0", "#303641"),
+            dropdown_fg_color=panel_bg,
+            dropdown_hover_color=("#e2e8f0", "#343b46"),
+            text_color=text,
+            dropdown_text_color=text,
+            font=(ui_font, 12),
+            dropdown_font=(ui_font, 12),
         )
-        self.parser_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.parser_combo.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=(14, 14))
 
-        ttk.Label(settings_row, text="Browser").pack(side=tk.LEFT, padx=(0, 4))
-        self.browser_combo = ttk.Combobox(
-            settings_row,
-            textvariable=self.browser_var,
+        ctk.CTkLabel(options_card, text="Browser", text_color=muted).grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self.browser_combo = ctk.CTkComboBox(
+            options_card,
+            variable=self.browser_var,
             values=("chrome", "firefox"),
             state="readonly",
-            width=11,
+            height=34,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            button_color=panel_alt,
+            button_hover_color=("#e2e8f0", "#303641"),
+            dropdown_fg_color=panel_bg,
+            dropdown_hover_color=("#e2e8f0", "#343b46"),
+            text_color=text,
+            dropdown_text_color=text,
+            font=(ui_font, 12),
+            dropdown_font=(ui_font, 12),
         )
-        self.browser_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.browser_combo.grid(row=0, column=3, sticky="ew", padx=(0, 12), pady=(14, 14))
 
-        ttk.Label(settings_row, text="Wait").pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Entry(settings_row, textvariable=self.wait_var, width=4).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Label(settings_row, text="Timeout").pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Entry(settings_row, textvariable=self.timeout_var, width=4).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Label(settings_row, text="Retries").pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Entry(settings_row, textvariable=self.retries_var, width=4).pack(side=tk.LEFT, padx=(0, 10))
+        numeric_specs = (
+            ("Wait", self.wait_var),
+            ("Timeout", self.timeout_var),
+            ("Retries", self.retries_var),
+        )
+        for offset, (label, variable) in enumerate(numeric_specs):
+            label_column = 4 + offset * 2
+            entry_column = label_column + 1
+            ctk.CTkLabel(options_card, text=label, text_color=muted).grid(
+                row=0,
+                column=label_column,
+                sticky="w",
+                padx=(0, 8),
+            )
+            ctk.CTkEntry(
+                options_card,
+                textvariable=variable,
+                width=58,
+                height=34,
+                corner_radius=8,
+                fg_color=panel_alt,
+                border_color=border,
+                text_color=text,
+                font=(ui_font, 12),
+            ).grid(row=0, column=entry_column, sticky="w", padx=(0, 12), pady=(14, 14))
 
-        ttk.Checkbutton(
-            settings_row,
-            text="Prefer dynamic first",
+        ctk.CTkSwitch(
+            options_card,
+            text="Dynamic first",
             variable=self.prefer_dynamic_var,
-        ).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Checkbutton(
-            settings_row,
+            progress_color=accent,
+            text_color=text,
+            font=(ui_font, 12),
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=(18, 12), pady=(0, 16))
+        ctk.CTkSwitch(
+            options_card,
             text="Auto-download",
             variable=self.auto_download_var,
-        ).pack(side=tk.LEFT, padx=(0, 2))
-
-        ttk.Label(settings_row, text="Logs").pack(side=tk.LEFT, padx=(10, 4))
-        self.logs_path_hint = ttk.Label(
-            settings_row,
-            text="Auto-saved in ./logs (session file).",
-            style="Hint.TLabel",
+            progress_color=accent,
+            text_color=text,
+            font=(ui_font, 12),
+        ).grid(row=1, column=2, columnspan=2, sticky="w", padx=(0, 12), pady=(0, 16))
+        ctk.CTkLabel(options_card, text="Log level", text_color=muted).grid(
+            row=1,
+            column=4,
+            sticky="w",
+            padx=(0, 8),
+            pady=(0, 16),
         )
-        self.logs_path_hint.pack(side=tk.LEFT, padx=(0, 10))
-
-        ttk.Label(settings_row, text="Log level").pack(side=tk.LEFT, padx=(0, 4))
-        self.level_combo = ttk.Combobox(
-            settings_row,
-            textvariable=self.log_level_var,
+        self.level_combo = ctk.CTkComboBox(
+            options_card,
+            variable=self.log_level_var,
             values=("DEBUG", "INFO", "WARNING", "ERROR"),
             state="readonly",
-            width=8,
+            height=34,
+            width=112,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            button_color=panel_alt,
+            button_hover_color=("#e2e8f0", "#303641"),
+            dropdown_fg_color=panel_bg,
+            dropdown_hover_color=("#e2e8f0", "#343b46"),
+            text_color=text,
+            dropdown_text_color=text,
+            font=(ui_font, 12),
+            dropdown_font=(ui_font, 12),
         )
-        self.level_combo.pack(side=tk.LEFT)
+        self.level_combo.grid(row=1, column=5, sticky="w", padx=(0, 12), pady=(0, 16))
+        self.logs_path_hint = ctk.CTkLabel(
+            options_card,
+            text="Logs auto-save in ./logs.",
+            text_color=muted,
+            anchor="w",
+        )
+        self.logs_path_hint.grid(row=1, column=6, columnspan=4, sticky="ew", padx=(0, 18), pady=(0, 16))
 
-        self.debug_actions_frame = ttk.Frame(control_box)
-        self.debug_actions_frame.grid(row=5, column=0, columnspan=3, sticky="e", pady=(2, 0))
-        self.copy_json_button = ttk.Button(self.debug_actions_frame, text="Copy JSON", command=self._copy_json, style="Slim.TButton")
+        self.output_label = ctk.CTkLabel(options_card, text="Output JSON", text_color=muted)
+        self.output_label.grid(row=2, column=0, sticky="w", padx=(18, 8), pady=(0, 16))
+        self.output_entry = ctk.CTkEntry(
+            options_card,
+            textvariable=self.output_var,
+            height=34,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            text_color=text,
+            font=(ui_font, 12),
+        )
+        self.output_entry.grid(row=2, column=1, columnspan=6, sticky="ew", padx=(0, 12), pady=(0, 16))
+        self.output_browse_button = ctk.CTkButton(
+            options_card,
+            text=f"{icons['browse']}  Browse",
+            command=self._browse_output_file,
+            height=34,
+            width=96,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        )
+        self.output_browse_button.grid(row=2, column=7, sticky="ew", padx=(0, 12), pady=(0, 16))
+
+        self.debug_actions_frame = ctk.CTkFrame(options_card, fg_color="transparent")
+        self.debug_actions_frame.grid(row=2, column=8, columnspan=2, sticky="e", padx=(0, 18), pady=(0, 16))
+        self.copy_json_button = ctk.CTkButton(
+            self.debug_actions_frame,
+            text=f"{icons['copy']}  Copy JSON",
+            command=self._copy_json,
+            width=96,
+            height=34,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        )
         self.copy_json_button.pack(side=tk.LEFT, padx=(0, 8))
-        self.save_json_button = ttk.Button(self.debug_actions_frame, text="Save JSON As", command=self._save_json_as, style="Slim.TButton")
+        self.save_json_button = ctk.CTkButton(
+            self.debug_actions_frame,
+            text=f"{icons['save']}  Save As",
+            command=self._save_json_as,
+            width=86,
+            height=34,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        )
         self.save_json_button.pack(side=tk.LEFT)
 
-        content_pane = ttk.Panedwindow(main, orient=tk.VERTICAL)
-        content_pane.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        workspace = ctk.CTkFrame(
+            content,
+            fg_color=panel_bg,
+            border_width=1,
+            border_color=border,
+            corner_radius=8,
+        )
+        workspace.grid(row=2, column=0, sticky="nsew")
+        workspace.grid_columnconfigure(0, weight=1)
+        workspace.grid_rowconfigure(2, weight=1)
 
-        result_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
-        logs_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=8)
-        content_pane.add(result_frame, weight=3)
-        content_pane.add(logs_frame, weight=2)
+        workspace_header = ctk.CTkFrame(workspace, fg_color="transparent")
+        workspace_header.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 10))
+        workspace_header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            workspace_header,
+            text=f"{icons['workspace']}  Workspace",
+            font=(ui_font, 16, "bold"),
+            text_color=text,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            workspace_header,
+            textvariable=self.series_status_var,
+            text_color=muted,
+            anchor="e",
+        ).grid(row=0, column=1, sticky="e", padx=(16, 0))
 
-        self.result_tabs = ttk.Notebook(result_frame)
-        self.result_tabs.pack(fill=tk.BOTH, expand=True)
+        self.workspace_tab_var = tk.StringVar(value="Chapters")
+        self.workspace_tab_colors = {
+            "selected_fg": accent,
+            "selected_hover": accent_hover,
+            "selected_text": accent_text,
+            "idle_fg": panel_alt,
+            "idle_hover": ("#e2e8f0", "#303641"),
+            "idle_text": text,
+            "bar_fg": ("#eef2f7", "#20232a"),
+        }
+        self.workspace_tab_labels = {
+            "Chapters": f"{icons['chapters']}  Chapters",
+            "Logs": f"{icons['terminal']}  Logs",
+            "Debug JSON": f"{icons['json']}  Debug JSON",
+            "Image URLs": f"{icons['images']}  Image URLs",
+        }
+        self.workspace_tab_bar = ctk.CTkFrame(
+            workspace,
+            fg_color=self.workspace_tab_colors["bar_fg"],
+            corner_radius=8,
+        )
+        self.workspace_tab_bar.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.workspace_tab_bar.grid_columnconfigure(10, weight=1)
+        self.workspace_tab_buttons: dict[str, ctk.CTkButton] = {}
 
-        self.json_tab = ttk.Frame(self.result_tabs)
+        self.workspace_body = ctk.CTkFrame(workspace, fg_color="transparent", corner_radius=0)
+        self.workspace_body.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        self.workspace_body.grid_columnconfigure(0, weight=1)
+        self.workspace_body.grid_rowconfigure(0, weight=1)
+
+        chapter_tab = ttk.Frame(self.workspace_body, style="Surface.TFrame")
+        chapter_tab.columnconfigure(0, weight=1)
+        chapter_tab.rowconfigure(2, weight=1)
+
+        chapter_header = ttk.Frame(chapter_tab)
+        chapter_header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        chapter_header.columnconfigure(0, weight=1)
+        ttk.Label(chapter_header, text="Series Chapters", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(chapter_header, text="Filter", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=1,
+            sticky="e",
+            padx=(8, 6),
+        )
+        self.chapter_filter_combo = ctk.CTkComboBox(
+            chapter_header,
+            variable=self.chapter_filter_var,
+            values=("All chapters", "Downloaded only", "Not downloaded"),
+            state="readonly",
+            width=160,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            border_color=border,
+            button_color=panel_alt,
+            button_hover_color=("#e2e8f0", "#303641"),
+            dropdown_fg_color=panel_bg,
+            dropdown_hover_color=("#e2e8f0", "#343b46"),
+            text_color=text,
+            dropdown_text_color=text,
+            font=(ui_font, 12),
+            dropdown_font=(ui_font, 12),
+            command=lambda _choice: self._refresh_chapter_table(),
+        )
+        self.chapter_filter_combo.grid(row=0, column=2, sticky="e")
+
+        chapter_btns = ttk.Frame(chapter_tab, style="Toolbar.TFrame", padding=(10, 8))
+        chapter_btns.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        chapter_btns.columnconfigure(4, weight=1)
+        ctk.CTkButton(
+            chapter_btns,
+            text=f"{icons['select']}  Select All",
+            command=self._select_all_chapters,
+            width=112,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=0, padx=(0, 8))
+        ctk.CTkButton(
+            chapter_btns,
+            text=f"{icons['clear']}  Clear Selection",
+            command=self._clear_chapter_selection,
+            width=142,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=1, padx=(0, 8))
+        ctk.CTkButton(
+            chapter_btns,
+            text=f"{icons['run']}  Run URL Parse",
+            command=self._start_download,
+            width=148,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=2, padx=(0, 8))
+        ctk.CTkButton(
+            chapter_btns,
+            text=f"{icons['images']}  Payload Images",
+            command=self._start_image_download_from_payload,
+            width=158,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=3, padx=(0, 8))
+
+        chapter_list_frame = ttk.Frame(chapter_tab)
+        chapter_list_frame.grid(row=2, column=0, sticky="nsew")
+        chapter_list_frame.columnconfigure(0, weight=1)
+        chapter_list_frame.rowconfigure(0, weight=1)
+
+        self.chapter_table = ttk.Treeview(
+            chapter_list_frame,
+            columns=("status", "chapter", "release", "url"),
+            show="headings",
+            selectmode="extended",
+        )
+        self.chapter_table.heading("status", text="Downloaded")
+        self.chapter_table.heading("chapter", text="Chapter")
+        self.chapter_table.heading("release", text="Release")
+        self.chapter_table.heading("url", text="URL")
+        self.chapter_table.column("status", width=105, stretch=False, anchor=tk.CENTER)
+        self.chapter_table.column("chapter", width=260, stretch=False, anchor=tk.W)
+        self.chapter_table.column("release", width=160, stretch=False, anchor=tk.W)
+        self.chapter_table.column("url", width=620, stretch=True, anchor=tk.W)
+
+        self.chapter_scroll_y = ttk.Scrollbar(
+            chapter_list_frame,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.chapter_table.yview,
+        )
+        self.chapter_scroll_x = ttk.Scrollbar(
+            chapter_list_frame,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.chapter_table.xview,
+        )
+        self.chapter_table.configure(
+            yscrollcommand=self.chapter_scroll_y.set,
+            xscrollcommand=self.chapter_scroll_x.set,
+        )
+        self.chapter_table.grid(row=0, column=0, sticky="nsew")
+        self.chapter_scroll_y.grid(row=0, column=1, sticky="ns")
+        self.chapter_scroll_x.grid(row=1, column=0, sticky="ew")
+
+        logs_tab = ttk.Frame(self.workspace_body, style="Surface.TFrame")
+        logs_tab.columnconfigure(0, weight=1)
+        logs_tab.rowconfigure(1, weight=1)
+        logs_toolbar = ttk.Frame(logs_tab, style="Toolbar.TFrame", padding=(10, 8))
+        logs_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        logs_toolbar.columnconfigure(0, weight=1)
+        ttk.Label(logs_toolbar, text="Session log", style="ToolbarHint.TLabel").grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(
+            logs_toolbar,
+            text=f"{icons['folder']}  Open Folder",
+            command=self._open_log_folder,
+            width=124,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=1, padx=(0, 8))
+        ctk.CTkButton(
+            logs_toolbar,
+            text=f"{icons['clear']}  Clear",
+            command=self._clear_logs,
+            width=88,
+            height=32,
+            corner_radius=8,
+            fg_color=panel_alt,
+            hover_color=("#e2e8f0", "#303641"),
+            text_color=text,
+            font=compact_button_font,
+        ).grid(row=0, column=2)
+
+        logs_body = ttk.Frame(logs_tab)
+        logs_body.grid(row=1, column=0, sticky="nsew")
+        logs_body.columnconfigure(0, weight=1)
+        logs_body.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(
+            logs_body,
+            wrap=tk.WORD,
+            font=(mono_font, 10),
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self.log_scroll_y = ttk.Scrollbar(
+            logs_body,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.log_text.yview,
+        )
+        self.log_text.configure(yscrollcommand=self.log_scroll_y.set, state=tk.DISABLED)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_scroll_y.grid(row=0, column=1, sticky="ns")
+
+        self.json_tab = ttk.Frame(self.workspace_body, style="Surface.TFrame")
         self.json_tab.columnconfigure(0, weight=1)
         self.json_tab.rowconfigure(0, weight=1)
         self.json_text = tk.Text(
             self.json_tab,
             wrap=tk.NONE,
-            font=("Consolas", 10),
+            font=(mono_font, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -720,18 +1507,15 @@ class DownloaderUI:
         self.json_text.grid(row=0, column=0, sticky="nsew")
         self.json_scroll_y.grid(row=0, column=1, sticky="ns")
         self.json_scroll_x.grid(row=1, column=0, sticky="ew")
-        self.result_tabs.add(self.json_tab, text="Debug JSON")
 
-        self.url_tab = ttk.Frame(self.result_tabs)
+        self.url_tab = ttk.Frame(self.workspace_body, style="Surface.TFrame")
         self.url_tab.columnconfigure(0, weight=1)
         self.url_tab.rowconfigure(0, weight=1)
-
         self.url_table = ttk.Treeview(self.url_tab, columns=("index", "url"), show="headings")
         self.url_table.heading("index", text="#")
         self.url_table.heading("url", text="Image URL")
         self.url_table.column("index", width=50, anchor=tk.E, stretch=False)
         self.url_table.column("url", width=900, anchor=tk.W, stretch=True)
-
         url_scroll_y = ttk.Scrollbar(
             self.url_tab,
             orient=tk.VERTICAL,
@@ -745,25 +1529,269 @@ class DownloaderUI:
             command=self.url_table.xview,
         )
         self.url_table.configure(yscrollcommand=url_scroll_y.set, xscrollcommand=url_scroll_x.set)
-
         self.url_table.grid(row=0, column=0, sticky="nsew")
         url_scroll_y.grid(row=0, column=1, sticky="ns")
         url_scroll_x.grid(row=1, column=0, sticky="ew")
 
-        self.result_tabs.add(self.url_tab, text="Image URLs")
+        self.workspace_frames = {
+            "Chapters": chapter_tab,
+            "Logs": logs_tab,
+            "Debug JSON": self.json_tab,
+            "Image URLs": self.url_tab,
+        }
+        self.workspace_tab_names = ["Chapters", "Logs"]
+        for frame in self.workspace_frames.values():
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.grid_remove()
 
-        chapter_tab = ttk.Frame(self.result_tabs)
+        self._refresh_library_combo()
+        self._toggle_debug_tools()
+
+    def _build_layout(self) -> None:
+        self.root.configure(bg="#f3f6f8")
+        main = ttk.Frame(self.root, style="App.TFrame", padding=(16, 14, 16, 12))
+        main.pack(fill=tk.BOTH, expand=True)
+
+        header = ttk.Frame(main, style="App.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        header.columnconfigure(0, weight=1)
+
+        title_stack = ttk.Frame(header, style="App.TFrame")
+        title_stack.grid(row=0, column=0, sticky="w")
+        ttk.Label(title_stack, text="MC-WS-DL-T", style="AppTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            title_stack,
+            text="Manga and comic download workspace",
+            style="Hint.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(1, 0))
+
+        header_actions = ttk.Frame(header, style="App.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        ttk.Label(header_actions, text="Theme", style="Hint.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        self.theme_combo = ttk.Combobox(
+            header_actions,
+            textvariable=self.theme_var,
+            values=("light", "dark"),
+            state="readonly",
+            width=8,
+        )
+        self.theme_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.theme_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_theme_change())
+        ttk.Button(
+            header_actions,
+            text="Library",
+            command=self._open_current_library_folder,
+            style="Secondary.TButton",
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            header_actions,
+            text="Logs",
+            command=self._open_log_popup,
+            style="Secondary.TButton",
+        ).pack(side=tk.LEFT)
+
+        control_box = ttk.Frame(main, style="Card.TFrame", padding=(14, 12))
+        control_box.grid(row=1, column=0, sticky="ew")
+        control_box.columnconfigure(1, weight=1)
+        control_box.columnconfigure(2, weight=0)
+        control_box.columnconfigure(3, weight=0)
+
+        ttk.Label(control_box, text="Series URL", style="Surface.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 10),
+            pady=(0, 8),
+        )
+        url_entry = ttk.Entry(control_box, textvariable=self.url_var)
+        url_entry.grid(row=0, column=1, sticky="ew", pady=(0, 8))
+        self.load_series_button = ttk.Button(
+            control_box,
+            text="Load Chapters",
+            command=self._start_series_discovery,
+            style="Primary.TButton",
+            width=15,
+        )
+        self.load_series_button.grid(row=0, column=2, columnspan=2, sticky="ew", padx=(10, 0), pady=(0, 8))
+
+        ttk.Label(control_box, text="Library", style="Surface.TLabel").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(0, 10),
+            pady=(0, 8),
+        )
+        self.image_dir_combo = ttk.Combobox(
+            control_box,
+            textvariable=self.image_dir_var,
+            values=self.library_locations,
+            state="normal",
+        )
+        self.image_dir_combo.grid(row=1, column=1, sticky="ew", pady=(0, 8))
+        self.image_dir_combo.bind("<<ComboboxSelected>>", lambda _event: self._persist_current_library())
+        self.image_dir_combo.bind("<FocusOut>", lambda _event: self._persist_current_library())
+        self.image_dir_combo.bind("<Return>", lambda _event: self._persist_current_library())
+        ttk.Button(
+            control_box,
+            text="Browse",
+            command=self._browse_image_dir,
+            style="Secondary.TButton",
+            width=10,
+        ).grid(row=1, column=2, sticky="ew", padx=(10, 0), pady=(0, 8))
+        ttk.Button(
+            control_box,
+            text="Open",
+            command=self._open_current_library_folder,
+            style="Secondary.TButton",
+            width=8,
+        ).grid(row=1, column=3, sticky="ew", padx=(8, 0), pady=(0, 8))
+
+        settings_grid = ttk.Frame(control_box, style="Surface.TFrame")
+        settings_grid.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(2, 0))
+        for column in (1, 3, 5, 7, 9):
+            settings_grid.columnconfigure(column, weight=1)
+
+        ttk.Label(settings_grid, text="Parser", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 6),
+        )
+        self.parser_combo = ttk.Combobox(
+            settings_grid,
+            textvariable=self.parser_var,
+            values=get_available_parser_names(),
+            state="readonly",
+            width=12,
+        )
+        self.parser_combo.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+
+        ttk.Label(settings_grid, text="Browser", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=2,
+            sticky="w",
+            padx=(0, 6),
+        )
+        self.browser_combo = ttk.Combobox(
+            settings_grid,
+            textvariable=self.browser_var,
+            values=("chrome", "firefox"),
+            state="readonly",
+            width=12,
+        )
+        self.browser_combo.grid(row=0, column=3, sticky="ew", padx=(0, 12))
+
+        ttk.Label(settings_grid, text="Wait", style="SurfaceHint.TLabel").grid(row=0, column=4, sticky="w", padx=(0, 6))
+        ttk.Entry(settings_grid, textvariable=self.wait_var, width=5).grid(row=0, column=5, sticky="w", padx=(0, 12))
+
+        ttk.Label(settings_grid, text="Timeout", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=6,
+            sticky="w",
+            padx=(0, 6),
+        )
+        ttk.Entry(settings_grid, textvariable=self.timeout_var, width=5).grid(
+            row=0,
+            column=7,
+            sticky="w",
+            padx=(0, 12),
+        )
+
+        ttk.Label(settings_grid, text="Retries", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=8,
+            sticky="w",
+            padx=(0, 6),
+        )
+        ttk.Entry(settings_grid, textvariable=self.retries_var, width=5).grid(row=0, column=9, sticky="w")
+
+        option_row = ttk.Frame(control_box, style="Surface.TFrame")
+        option_row.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        ttk.Checkbutton(
+            option_row,
+            text="Prefer dynamic first",
+            variable=self.prefer_dynamic_var,
+        ).pack(side=tk.LEFT, padx=(0, 14))
+        ttk.Checkbutton(
+            option_row,
+            text="Auto-download",
+            variable=self.auto_download_var,
+        ).pack(side=tk.LEFT, padx=(0, 14))
+        ttk.Label(option_row, text="Log level", style="SurfaceHint.TLabel").pack(side=tk.LEFT, padx=(2, 6))
+        self.level_combo = ttk.Combobox(
+            option_row,
+            textvariable=self.log_level_var,
+            values=("DEBUG", "INFO", "WARNING", "ERROR"),
+            state="readonly",
+            width=9,
+        )
+        self.level_combo.pack(side=tk.LEFT)
+        self.logs_path_hint = ttk.Label(
+            option_row,
+            text="Auto-saved in ./logs (session file).",
+            style="SurfaceHint.TLabel",
+        )
+        self.logs_path_hint.pack(side=tk.LEFT, padx=(12, 0))
+
+        self.output_label = ttk.Label(control_box, text="Output JSON", style="Surface.TLabel")
+        self.output_label.grid(row=4, column=0, sticky="w", padx=(0, 10), pady=(10, 0))
+        self.output_entry = ttk.Entry(control_box, textvariable=self.output_var)
+        self.output_entry.grid(row=4, column=1, sticky="ew", pady=(10, 0))
+        self.output_browse_button = ttk.Button(
+            control_box,
+            text="Browse",
+            command=self._browse_output_file,
+            style="Secondary.TButton",
+            width=10,
+        )
+        self.output_browse_button.grid(row=4, column=2, sticky="ew", padx=(10, 0), pady=(10, 0))
+
+        self.debug_actions_frame = ttk.Frame(control_box, style="Surface.TFrame")
+        self.debug_actions_frame.grid(row=5, column=0, columnspan=4, sticky="e", pady=(10, 0))
+        self.copy_json_button = ttk.Button(self.debug_actions_frame, text="Copy JSON", command=self._copy_json, style="Slim.TButton")
+        self.copy_json_button.pack(side=tk.LEFT, padx=(0, 8))
+        self.save_json_button = ttk.Button(self.debug_actions_frame, text="Save JSON As", command=self._save_json_as, style="Slim.TButton")
+        self.save_json_button.pack(side=tk.LEFT)
+
+        content_pane = ttk.Panedwindow(main, orient=tk.VERTICAL)
+        content_pane.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+
+        result_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=(12, 10))
+        logs_frame = ttk.Frame(content_pane, style="Card.TFrame", padding=(12, 10))
+        content_pane.add(result_frame, weight=4)
+        content_pane.add(logs_frame, weight=2)
+        result_frame.columnconfigure(0, weight=1)
+        result_frame.rowconfigure(1, weight=1)
+
+        result_header = ttk.Frame(result_frame, style="Surface.TFrame")
+        result_header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        result_header.columnconfigure(0, weight=1)
+        ttk.Label(result_header, text="Workspace", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            result_header,
+            textvariable=self.series_status_var,
+            style="SurfaceHint.TLabel",
+        ).grid(row=0, column=1, sticky="e")
+
+        self.result_tabs = ttk.Notebook(result_frame)
+        self.result_tabs.grid(row=1, column=0, sticky="nsew")
+
+        chapter_tab = ttk.Frame(self.result_tabs, style="Surface.TFrame", padding=(0, 8, 0, 0))
         chapter_tab.columnconfigure(0, weight=1)
         chapter_tab.rowconfigure(2, weight=1)
 
-        chapter_header = ttk.Frame(chapter_tab)
-        chapter_header.grid(row=0, column=0, sticky="ew", padx=2, pady=(2, 6))
+        chapter_header = ttk.Frame(chapter_tab, style="Surface.TFrame")
+        chapter_header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 8))
         chapter_header.columnconfigure(0, weight=1)
 
-        series_meta = ttk.Label(chapter_header, textvariable=self.series_status_var, style="Hint.TLabel")
-        series_meta.grid(row=0, column=0, sticky="w")
+        ttk.Label(chapter_header, text="Series Chapters", style="Section.TLabel").grid(row=0, column=0, sticky="w")
 
-        ttk.Label(chapter_header, text="Filter").grid(row=0, column=1, sticky="e", padx=(8, 6))
+        ttk.Label(chapter_header, text="Filter", style="SurfaceHint.TLabel").grid(
+            row=0,
+            column=1,
+            sticky="e",
+            padx=(8, 6),
+        )
         self.chapter_filter_combo = ttk.Combobox(
             chapter_header,
             textvariable=self.chapter_filter_var,
@@ -774,9 +1802,9 @@ class DownloaderUI:
         self.chapter_filter_combo.grid(row=0, column=2, sticky="e")
         self.chapter_filter_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_chapter_table())
 
-        chapter_btns = ttk.Frame(chapter_tab)
-        chapter_btns.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        chapter_btns.columnconfigure(99, weight=1)
+        chapter_btns = ttk.Frame(chapter_tab, style="Toolbar.TFrame", padding=(10, 8))
+        chapter_btns.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        chapter_btns.columnconfigure(9, weight=1)
 
         self.download_selected_button = ttk.Button(
             chapter_btns,
@@ -822,7 +1850,7 @@ class DownloaderUI:
         )
         self.retry_failed_button.grid(row=0, column=4, padx=(0, 12))
 
-        ttk.Label(chapter_btns, text="Retry/chapter").grid(row=0, column=5, padx=(0, 6))
+        ttk.Label(chapter_btns, text="Retry/chapter", style="ToolbarHint.TLabel").grid(row=0, column=5, padx=(0, 6))
         self.retry_spin = ttk.Spinbox(
             chapter_btns,
             from_=0,
@@ -833,13 +1861,17 @@ class DownloaderUI:
         self.retry_spin.grid(row=0, column=6, padx=(0, 12))
 
         ttk.Button(chapter_btns, text="Select All", command=self._select_all_chapters, style="Slim.TButton").grid(
-            row=0, column=7, padx=(0, 8)
+            row=0,
+            column=7,
+            padx=(0, 8),
         )
-        ttk.Button(chapter_btns, text="Clear Selection", command=self._clear_chapter_selection, style="Slim.TButton").grid(
-            row=0, column=8, padx=(0, 4)
+        ttk.Button(chapter_btns, text="Clear", command=self._clear_chapter_selection, style="Slim.TButton").grid(
+            row=0,
+            column=8,
+            padx=(0, 4),
         )
 
-        chapter_list_frame = ttk.Frame(chapter_tab)
+        chapter_list_frame = ttk.Frame(chapter_tab, style="Surface.TFrame")
         chapter_list_frame.grid(row=2, column=0, sticky="nsew")
         chapter_list_frame.columnconfigure(0, weight=1)
         chapter_list_frame.rowconfigure(0, weight=1)
@@ -854,12 +1886,11 @@ class DownloaderUI:
         self.chapter_table.heading("chapter", text="Chapter")
         self.chapter_table.heading("release", text="Release")
         self.chapter_table.heading("url", text="URL")
-        self.chapter_table.column("status", width=90, stretch=False, anchor=tk.CENTER)
-        self.chapter_table.column("chapter", width=220, stretch=False, anchor=tk.W)
-        self.chapter_table.column("release", width=150, stretch=False, anchor=tk.W)
-        self.chapter_table.column("url", width=600, stretch=True, anchor=tk.W)
+        self.chapter_table.column("status", width=105, stretch=False, anchor=tk.CENTER)
+        self.chapter_table.column("chapter", width=260, stretch=False, anchor=tk.W)
+        self.chapter_table.column("release", width=160, stretch=False, anchor=tk.W)
+        self.chapter_table.column("url", width=620, stretch=True, anchor=tk.W)
 
-        # Keep chapter scrollbars slim and subtle.
         self.chapter_scroll_y = ttk.Scrollbar(
             chapter_list_frame,
             orient=tk.VERTICAL,
@@ -882,18 +1913,96 @@ class DownloaderUI:
 
         self.result_tabs.add(chapter_tab, text="Series Chapters")
 
-        logs_toolbar = ttk.Frame(logs_frame)
-        logs_toolbar.pack(fill=tk.X, pady=(0, 6))
-        ttk.Label(logs_toolbar, text="Session logs are auto-saved.", style="Hint.TLabel").pack(side=tk.LEFT)
+        self.json_tab = ttk.Frame(self.result_tabs, style="Surface.TFrame", padding=(0, 8, 0, 0))
+        self.json_tab.columnconfigure(0, weight=1)
+        self.json_tab.rowconfigure(0, weight=1)
+        self.json_text = tk.Text(
+            self.json_tab,
+            wrap=tk.NONE,
+            font=(self.mono_font_family, 10),
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        self.json_scroll_y = ttk.Scrollbar(
+            self.json_tab,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.json_text.yview,
+        )
+        self.json_scroll_x = ttk.Scrollbar(
+            self.json_tab,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.json_text.xview,
+        )
+        self.json_text.configure(
+            yscrollcommand=self.json_scroll_y.set,
+            xscrollcommand=self.json_scroll_x.set,
+            state=tk.DISABLED,
+        )
+        self.json_text.grid(row=0, column=0, sticky="nsew")
+        self.json_scroll_y.grid(row=0, column=1, sticky="ns")
+        self.json_scroll_x.grid(row=1, column=0, sticky="ew")
+        self.result_tabs.add(self.json_tab, text="Debug JSON")
 
-        logs_body = ttk.Frame(logs_frame)
-        logs_body.pack(fill=tk.BOTH, expand=True)
+        self.url_tab = ttk.Frame(self.result_tabs, style="Surface.TFrame", padding=(0, 8, 0, 0))
+        self.url_tab.columnconfigure(0, weight=1)
+        self.url_tab.rowconfigure(0, weight=1)
+
+        self.url_table = ttk.Treeview(self.url_tab, columns=("index", "url"), show="headings")
+        self.url_table.heading("index", text="#")
+        self.url_table.heading("url", text="Image URL")
+        self.url_table.column("index", width=50, anchor=tk.E, stretch=False)
+        self.url_table.column("url", width=900, anchor=tk.W, stretch=True)
+
+        url_scroll_y = ttk.Scrollbar(
+            self.url_tab,
+            orient=tk.VERTICAL,
+            style="Modern.Vertical.TScrollbar",
+            command=self.url_table.yview,
+        )
+        url_scroll_x = ttk.Scrollbar(
+            self.url_tab,
+            orient=tk.HORIZONTAL,
+            style="Modern.Horizontal.TScrollbar",
+            command=self.url_table.xview,
+        )
+        self.url_table.configure(yscrollcommand=url_scroll_y.set, xscrollcommand=url_scroll_x.set)
+
+        self.url_table.grid(row=0, column=0, sticky="nsew")
+        url_scroll_y.grid(row=0, column=1, sticky="ns")
+        url_scroll_x.grid(row=1, column=0, sticky="ew")
+
+        self.result_tabs.add(self.url_tab, text="Image URLs")
+
+        logs_frame.columnconfigure(0, weight=1)
+        logs_frame.rowconfigure(1, weight=1)
+
+        logs_toolbar = ttk.Frame(logs_frame, style="Surface.TFrame")
+        logs_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        logs_toolbar.columnconfigure(0, weight=1)
+        ttk.Label(logs_toolbar, text="Logs", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Button(logs_toolbar, text="Open Folder", command=self._open_log_folder, style="Slim.TButton").grid(
+            row=0,
+            column=1,
+            padx=(0, 8),
+        )
+        ttk.Button(logs_toolbar, text="Pop Out", command=self._open_log_popup, style="Slim.TButton").grid(
+            row=0,
+            column=2,
+            padx=(0, 8),
+        )
+        ttk.Button(logs_toolbar, text="Clear", command=self._clear_logs, style="Slim.TButton").grid(row=0, column=3)
+
+        logs_body = ttk.Frame(logs_frame, style="Surface.TFrame")
+        logs_body.grid(row=1, column=0, sticky="nsew")
         logs_body.columnconfigure(0, weight=1)
         logs_body.rowconfigure(0, weight=1)
         self.log_text = tk.Text(
             logs_body,
             wrap=tk.WORD,
-            font=("Consolas", 10),
+            font=(self.mono_font_family, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -908,20 +2017,122 @@ class DownloaderUI:
         self.log_text.grid(row=0, column=0, sticky="nsew")
         self.log_scroll_y.grid(row=0, column=1, sticky="ns")
 
-        footer = ttk.Frame(main, style="Card.TFrame")
-        footer.grid(row=2, column=0, sticky="ew", padx=4, pady=(6, 0))
+        footer = ttk.Frame(main, style="Status.TFrame", padding=(10, 6))
+        footer.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         footer.columnconfigure(0, weight=1)
-        ttk.Label(footer, textvariable=self.summary_var, style="Hint.TLabel", anchor=tk.W).grid(row=0, column=0, sticky="w")
-        ttk.Label(footer, textvariable=self.status_var, style="Hint.TLabel", anchor=tk.E).grid(row=0, column=1, sticky="e")
+        ttk.Label(footer, textvariable=self.summary_var, style="Status.TLabel", anchor=tk.W).grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+        ttk.Label(footer, textvariable=self.status_var, style="Status.TLabel", anchor=tk.E).grid(
+            row=0,
+            column=1,
+            sticky="e",
+        )
 
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(1, weight=1)
+        main.rowconfigure(2, weight=1)
         self._refresh_library_combo()
         self._toggle_debug_tools()
+
+    def _show_workspace_tab(self, tab_name: str) -> None:
+        frames = cast(dict[str, Any], getattr(self, "workspace_frames", {}))
+        if not frames:
+            return
+
+        active_tab = tab_name if tab_name in frames else "Chapters"
+        for frame_name, frame in frames.items():
+            if frame_name == active_tab:
+                frame.grid()
+            else:
+                frame.grid_remove()
+
+        tab_var = cast(tk.StringVar | None, getattr(self, "workspace_tab_var", None))
+        if tab_var is not None and tab_var.get() != active_tab:
+            tab_var.set(active_tab)
+
+        buttons = cast(dict[str, Any], getattr(self, "workspace_tab_buttons", {}))
+        colors = cast(dict[str, Any], getattr(self, "workspace_tab_colors", {}))
+        for button_name, button in buttons.items():
+            if button_name == active_tab:
+                button.configure(
+                    fg_color=colors["selected_fg"],
+                    hover_color=colors["selected_hover"],
+                    text_color=colors["selected_text"],
+                )
+            else:
+                button.configure(
+                    fg_color=colors["idle_fg"],
+                    hover_color=colors["idle_hover"],
+                    text_color=colors["idle_text"],
+                )
+
+    def _rebuild_workspace_tab_buttons(self, tab_names: list[str]) -> None:
+        tab_bar = cast(Any, getattr(self, "workspace_tab_bar", None))
+        colors = cast(dict[str, Any], getattr(self, "workspace_tab_colors", {}))
+        if tab_bar is None or not colors:
+            return
+
+        existing_buttons = cast(dict[str, Any], getattr(self, "workspace_tab_buttons", {}))
+        for button in existing_buttons.values():
+            button.destroy()
+
+        self.workspace_tab_buttons = {}
+        labels = cast(dict[str, str], getattr(self, "workspace_tab_labels", {}))
+        for index, tab_name in enumerate(tab_names):
+            button = ctk.CTkButton(
+                tab_bar,
+                text=labels.get(tab_name, tab_name),
+                command=lambda name=tab_name: self._show_workspace_tab(name),
+                width=154,
+                height=34,
+                corner_radius=8,
+                border_width=0,
+                fg_color=colors["idle_fg"],
+                hover_color=colors["idle_hover"],
+                text_color=colors["idle_text"],
+                font=(self.ui_font_family, 12, "bold"),
+            )
+            button.grid(row=0, column=index, sticky="w", padx=(4 if index == 0 else 2, 2), pady=4)
+            self.workspace_tab_buttons[tab_name] = button
+
+    def _set_workspace_tabs(self, tab_names: list[str]) -> None:
+        if not hasattr(self, "workspace_tab_bar"):
+            return
+
+        self.workspace_tab_names = tab_names
+        self._rebuild_workspace_tab_buttons(tab_names)
+
+        tab_var = cast(tk.StringVar, getattr(self, "workspace_tab_var"))
+        current_tab = tab_var.get()
+        if current_tab not in tab_names:
+            current_tab = "Chapters"
+
+        self._show_workspace_tab(current_tab)
 
     def _toggle_debug_tools(self) -> None:
         # Keep JSON export features available, but hide them from the default operator flow.
         show_debug = self.show_debug_var.get()
+
+        if hasattr(self, "workspace_tab_bar"):
+            if show_debug:
+                self.output_label.grid()
+                self.output_entry.grid()
+                self.output_browse_button.grid()
+                self.debug_actions_frame.grid()
+                self._json_tab_visible = True
+                self._url_tab_visible = True
+                self._set_workspace_tabs(["Chapters", "Logs", "Debug JSON", "Image URLs"])
+            else:
+                self.output_label.grid_remove()
+                self.output_entry.grid_remove()
+                self.output_browse_button.grid_remove()
+                self.debug_actions_frame.grid_remove()
+                self._json_tab_visible = False
+                self._url_tab_visible = False
+                self._set_workspace_tabs(["Chapters", "Logs"])
+            return
 
         if show_debug:
             self.output_label.grid()
@@ -994,7 +2205,7 @@ class DownloaderUI:
         self._popup_log_text = tk.Text(
             popup_frame,
             wrap=tk.WORD,
-            font=("Consolas", 10),
+            font=(self.mono_font_family, 10),
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
@@ -1072,7 +2283,8 @@ class DownloaderUI:
         for row in self.url_table.get_children():
             self.url_table.delete(row)
         for index, image_url in enumerate(image_urls, start=1):
-            self.url_table.insert("", tk.END, values=(index, image_url))
+            tags = ("odd",) if index % 2 else ()
+            self.url_table.insert("", tk.END, values=(index, image_url), tags=tags)
 
     def _browse_output_file(self) -> None:
         chosen = filedialog.asksaveasfilename(
@@ -1276,6 +2488,7 @@ class DownloaderUI:
                 "",
                 tk.END,
                 values=(status, chapter.title, chapter.release, chapter.url),
+                tags=("downloaded" if is_downloaded else "pending",),
             )
             if chapter.url in selected_urls:
                 new_selection.append(row_id)
@@ -1739,7 +2952,9 @@ class DownloaderUI:
 
 
 def launch_ui() -> None:
-    root = tk.Tk()
+    ctk.set_default_color_theme("blue")
+    ctk.set_appearance_mode("light")
+    root = ctk.CTk()
     DownloaderUI(root)
     root.mainloop()
 
